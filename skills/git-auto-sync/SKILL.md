@@ -9,7 +9,7 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
 
 ## 前置条件
 
-本机必须已有 GitHub 推送凭据。HTTPS 推荐先运行 `gh auth login`，按提示选择 GitHub.com、HTTPS 和浏览器登录，再运行 `gh auth setup-git`；SSH 用户需提前配置密钥并用 `ssh -T git@github.com` 验证。不得要求用户把密码或 Token 发给 Codex。
+本机必须已有 GitHub 推送凭据。提醒用户配置时必须写清：在 **Windows PowerShell 窗口**执行，不是在 Codex 对话框发送，也不需要先进入项目目录。HTTPS 推荐运行 `gh auth login`，按提示选择 GitHub.com、HTTPS 和浏览器登录，成功后回到同一个 PowerShell 窗口运行 `gh auth setup-git`，最后用 `gh auth status` 检查；SSH 用户需提前配置密钥并用 `ssh -T git@github.com` 验证。不得要求用户把密码或 Token 发给 Codex。
 
 ## 执行流程
 

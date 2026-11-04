@@ -10,19 +10,35 @@
 
 ### HTTPS（推荐）
 
-1. 安装 GitHub CLI，并确认 `gh --version` 可用。
-2. 运行 `gh auth login`。
-3. 依次选择 `GitHub.com`、`HTTPS`、浏览器登录，并在浏览器中授权。
-4. 运行 `gh auth setup-git`，让 Git 使用 GitHub CLI 凭据。
-5. 运行 `gh auth status` 检查登录状态。
+以下命令都在 **Windows PowerShell** 中执行，不是在 Codex 对话框里发送。按 `Win + R`，输入 `powershell` 并回车即可打开。命令与当前目录无关，不需要先 `cd` 到项目。
+
+1. 在 PowerShell 运行 `gh --version`。如果提示找不到 `gh`，先安装 GitHub CLI，再重新打开 PowerShell。
+2. 在同一个 PowerShell 窗口运行：
+
+   ```powershell
+   gh auth login
+   ```
+
+3. 按窗口中的问题依次选择 `GitHub.com`、`HTTPS`、浏览器登录。窗口显示一次性验证码后，复制验证码，在自动打开的 GitHub 网页中登录并授权。
+4. 回到 PowerShell，登录成功后运行：
+
+   ```powershell
+   gh auth setup-git
+   ```
+
+   这条命令让本机 Git 在推送时复用刚才的 GitHub 登录凭据。
+
+5. 最后运行 `gh auth status`，看到已登录账号即完成。以后 Codex 执行 `git push` 时会使用这套凭据。
 
 ### SSH
 
-1. 在本机生成或复用 SSH 密钥，并把公钥添加到 GitHub 账号。
+SSH 命令同样在 Windows PowerShell 中执行。
+
+1. 在本机生成或复用 SSH 密钥，并把公钥添加到 GitHub 账号的 `Settings → SSH and GPG keys`。
 2. 确认仓库远程使用 SSH 地址，例如 `git@github.com:用户名/仓库.git`。
 3. 运行 `ssh -T git@github.com` 验证连接。
 
-未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。
+未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。Codex 会明确提醒你在 Windows PowerShell 中完成上述步骤。
 
 ## 功能
 

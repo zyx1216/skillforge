@@ -23,8 +23,10 @@ AUTH_ERROR = re.compile(
     re.IGNORECASE,
 )
 SETUP_GUIDANCE = (
-    "GitHub 凭据未配置、已失效或当前账号无权访问远程。请先执行 gh auth login，"
-    "按提示选择 GitHub.com、HTTPS 和浏览器登录，再执行 gh auth setup-git；"
+    "GitHub 凭据未配置、已失效或当前账号无权访问远程。请打开 Windows PowerShell"
+    "（Win+R 输入 powershell），不要在 Codex 对话框发送命令，也无需进入项目目录。"
+    "先执行 gh auth login，按提示选择 GitHub.com、HTTPS 和浏览器登录；"
+    "成功后回到同一个 PowerShell 窗口执行 gh auth setup-git，再用 gh auth status 检查；"
     "使用 SSH 时改为配置本机 SSH 密钥并用 ssh -T git@github.com 验证。"
     "不要把密码或 Token 发给 Codex。配置后重新运行本任务。"
 )
