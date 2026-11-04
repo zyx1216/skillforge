@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path, PurePath
+
+
+SENSITIVE_NAMES = {
+    ".env", ".netrc", "credentials.json", "secrets.yml", "secrets.yaml",
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+}
+SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".jks", ".pfx", ".keystore")
+CREDENTIAL_URL = re.compile(r"(https?://)[^/\s:@]+:[^/\s@]+@", re.IGNORECASE)
+ASSIGNED_SECRET = re.compile(
+    r"(?i)\b(password|passwd|token|api[_-]?key|secret|access[_-]?key)\b(\s*[:=]\s*)([^\s]+)"
+)
+
+
+def report(status, exit_code, **details):
+    print(json.dumps({"status": status, **details}, ensure_ascii=False))
+    return exit_code
+
+
+def run_git(args, check=True):
+    env = os.environ.copy()
+    env["LC_ALL"] = "C.UTF-8"
+    result = subprocess.run(
+        ["git", *args], text=True, encoding="utf-8",
+        capture_output=True, timeout=30, env=env,
+    )
+    if check and result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+    return result
+
+
+def sanitize(text):
+    text = CREDENTIAL_URL.sub(r"\1<已隐藏>@", text)
+    return ASSIGNED_SECRET.sub(r"\1\2<已隐藏>", text)
+
+
+def is_sensitive(path):
+    name = PurePath(path).name.lower()
+    if name in SENSITIVE_NAMES or name.startswith(".env."):
+        return name not in {".env.example", ".env.template", ".env.sample"}
+    return name.endswith(SENSITIVE_SUFFIXES) or name.endswith(".secret")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="提交指定路径并推送当前分支 upstream")
+    parser.add_argument("--message", required=True, help="Codex 根据实际改动生成的提交说明")
+    parser.add_argument("--allow-dirty", action="store_true", help="确认路径中的改动均由本任务产生")
+    parser.add_argument("paths", nargs="*", help="只暂存这些仓库相对路径")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    if not args.paths or not args.message.strip():
+        return report("invalid_arguments", 2, error="必须提供提交说明和至少一个路径")
+    if any(PurePath(path).is_absolute() or ".." in PurePath(path).parts for path in args.paths):
+        return report("invalid_arguments", 2, error="路径必须是仓库内的相对路径")
+    sensitive = [path for path in args.paths if is_sensitive(path)]
+    if sensitive:
+        return report("blocked_sensitive_path", 3, paths=sensitive)
+    try:
+        run_git(["rev-parse", "--show-toplevel"])
+        preexisting_staged = run_git(["diff", "--cached", "--name-only"], check=False)
+        if preexisting_staged.returncode != 0:
+            return report("git_error", 1, error="无法读取暂存区")
+        if preexisting_staged.stdout.strip():
+            return report("preexisting_staged_changes", 5, error="请先处理已有暂存内容，执行器不会保存或重写用户索引")
+        dirty_paths = run_git(["status", "--porcelain", "--", *args.paths]).stdout.splitlines()
+        if dirty_paths and not args.allow_dirty:
+            return report("preexisting_dirty_paths", 5, paths=[line[3:] for line in dirty_paths])
+        candidates = run_git([
+            "ls-files", "--cached", "--others", "--deleted", "--modified",
+            "--exclude-standard", "--", *args.paths,
+        ]).stdout.splitlines()
+        sensitive_candidates = [path for path in candidates if is_sensitive(path)]
+        if sensitive_candidates:
+            return report("blocked_sensitive_path", 3, paths=sensitive_candidates)
+        run_git(["add", "--", *args.paths])
+        staged = run_git(["diff", "--cached", "--name-only"]).stdout.splitlines()
+        sensitive_staged = [path for path in staged if is_sensitive(path)]
+        if sensitive_staged:
+            run_git(["reset", "--", *args.paths])
+            return report("blocked_sensitive_path", 3, paths=sensitive_staged)
+        if not staged:
+            return report("no_changes", 0)
+        if run_git(["diff", "--cached", "--quiet"], check=False).returncode == 0:
+            return report("no_changes", 0)
+        run_git(["commit", "-m", args.message])
+        commit = run_git(["rev-parse", "HEAD"]).stdout.strip()
+        upstream = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], check=False)
+        branch = run_git(["branch", "--show-current"]).stdout.strip()
+        if not branch:
+            return report("missing_upstream", 2, commit=commit, error=" detached HEAD 不能自动推送")
+        if upstream.returncode != 0:
+            remotes = run_git(["remote"]).stdout.splitlines()
+            remote_head = run_git(["ls-remote", "--heads", "origin", branch], check=False)
+            if remotes != ["origin"] or not branch or remote_head.returncode != 0:
+                return report("missing_upstream", 2, commit=commit)
+            push = run_git([
+                "push", "-u", "origin", f"refs/heads/{branch}:refs/heads/{branch}",
+            ], check=False)
+            if push.returncode != 0:
+                return report("push_failed", 4, commit=commit, error=sanitize(push.stderr.strip()))
+            return report("pushed", 0, commit=commit, upstream=f"origin/{branch}")
+        upstream_name = upstream.stdout.strip()
+        remote_name = run_git(["config", f"branch.{branch}.remote"], check=False).stdout.strip()
+        merge_ref = run_git(["config", f"branch.{branch}.merge"], check=False).stdout.strip()
+        if not remote_name or not merge_ref.startswith("refs/heads/"):
+            return report("missing_upstream", 2, commit=commit, error="upstream 格式无法安全解析")
+        remote_branch = merge_ref.removeprefix("refs/heads/")
+        push = run_git(["push", remote_name, f"refs/heads/{branch}:refs/heads/{remote_branch}"], check=False)
+        if push.returncode != 0:
+            return report("push_failed", 4, commit=commit, error=sanitize(push.stderr.strip()))
+        return report("pushed", 0, commit=commit, upstream=upstream_name)
+    except (RuntimeError, subprocess.TimeoutExpired) as error:
+        return report("git_error", 1, error=sanitize(str(error)))
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.exit(main())

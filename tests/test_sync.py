@@ -1,0 +1,194 @@
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "skills" / "git-auto-sync" / "scripts" / "sync.py"
+
+
+def git(repo, *args):
+    env = os.environ.copy()
+    env["LC_ALL"] = "C.UTF-8"
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, text=True,
+        encoding="utf-8", capture_output=True, env=env,
+    ).stdout.strip()
+
+
+class SyncTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        base = Path(self.temp.name)
+        self.remote = base / "remote.git"
+        self.repo = base / "repo"
+        self.other = base / "other"
+        subprocess.run(["git", "init", "--bare", str(self.remote)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.remote), "symbolic-ref", "HEAD", "refs/heads/main"], check=True, capture_output=True)
+        subprocess.run(["git", "init", "-b", "main", str(self.repo)], check=True, capture_output=True)
+        git(self.repo, "config", "user.name", "测试用户")
+        git(self.repo, "config", "user.email", "test@example.com")
+        (self.repo / "README.md").write_text("初始\n", encoding="utf-8")
+        git(self.repo, "add", "README.md")
+        git(self.repo, "commit", "-m", "chore: 初始化")
+        git(self.repo, "remote", "add", "origin", str(self.remote))
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def sync(self, *args, allow_dirty=False):
+        env = os.environ.copy()
+        env["LC_ALL"] = "C.UTF-8"
+        env["PYTHONUTF8"] = "1"
+        command = [sys.executable, str(SCRIPT), *args]
+        if allow_dirty:
+            command.insert(2, "--allow-dirty")
+        return subprocess.run(
+            command, cwd=self.repo,
+            text=True, encoding="utf-8", capture_output=True, env=env,
+        )
+
+    def test_first_push_creates_upstream_and_uploads_commit(self):
+        (self.repo / "README.md").write_text("首次同步\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 更新说明", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "pushed")
+        self.assertEqual(git(self.repo, "rev-parse", "--abbrev-ref", "@{upstream}"), "origin/main")
+        clone = Path(self.temp.name) / "clone"
+        subprocess.run(["git", "clone", str(self.remote), str(clone)], check=True, capture_output=True)
+        self.assertEqual((clone / "README.md").read_text(encoding="utf-8"), "首次同步\n")
+
+    def test_no_changes_does_not_create_empty_commit(self):
+        before = git(self.repo, "rev-parse", "HEAD")
+        result = self.sync("--message", "docs: 空提交", "--", "README.md")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "no_changes")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), before)
+
+    def test_sensitive_path_is_not_committed(self):
+        before = git(self.repo, "rev-parse", "HEAD")
+        (self.repo / ".env").write_text("API_KEY=example\n", encoding="utf-8")
+        result = self.sync("--message", "chore: 错误提交", "--", ".env")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "blocked_sensitive_path")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), before)
+
+    def test_sensitive_file_inside_directory_is_blocked_before_staging(self):
+        config = self.repo / "config"
+        config.mkdir()
+        (config / ".env").write_text("TOKEN=example\n", encoding="utf-8")
+        (config / "settings.json").write_text("{}\n", encoding="utf-8")
+        result = self.sync("--message", "chore: 不应暂存", "--", "config", allow_dirty=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "blocked_sensitive_path")
+        self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "")
+
+    def test_missing_upstream_preserves_local_commit(self):
+        git(self.repo, "remote", "remove", "origin")
+        (self.repo / "README.md").write_text("仅本地\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 本地提交", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "missing_upstream")
+        self.assertEqual(git(self.repo, "log", "-1", "--pretty=%s"), "docs: 本地提交")
+
+    def test_diverged_remote_does_not_overwrite_remote(self):
+        self.sync("--message", "docs: 建立上游", "--", "README.md")
+        subprocess.run(["git", "clone", str(self.remote), str(self.other)], check=True, capture_output=True)
+        git(self.other, "config", "user.name", "其他用户")
+        git(self.other, "config", "user.email", "other@example.com")
+        (self.other / "remote.txt").write_text("远程新提交\n", encoding="utf-8")
+        git(self.other, "add", "remote.txt")
+        git(self.other, "commit", "-m", "docs: 远程更新")
+        git(self.other, "push")
+        (self.repo / "local.txt").write_text("本地新提交\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 本地更新", "--", "local.txt", allow_dirty=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "push_failed")
+        self.assertEqual(git(self.other, "log", "-1", "--pretty=%s"), "docs: 远程更新")
+
+    def test_paths_are_required(self):
+        result = self.sync("--message", "docs: 无路径")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "invalid_arguments")
+
+    def test_preexisting_staged_changes_are_not_included(self):
+        (self.repo / "user.txt").write_text("用户已暂存\n", encoding="utf-8")
+        git(self.repo, "add", "user.txt")
+        (self.repo / "task.txt").write_text("本任务\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 只提交任务", "--", "task.txt")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "preexisting_staged_changes")
+        self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "user.txt")
+        self.assertNotIn("task.txt", git(self.repo, "ls-files"))
+
+    def test_dirty_task_file_requires_manual_separation(self):
+        (self.repo / "README.md").write_text("用户先改\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 不应混合", "--", "README.md", allow_dirty=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "preexisting_dirty_paths")
+        self.assertEqual((self.repo / "README.md").read_text(encoding="utf-8"), "用户先改\n")
+
+    def test_custom_push_refspec_cannot_redirect_or_force_push(self):
+        git(self.repo, "config", "push.default", "matching")
+        result = self.sync("--message", "docs: 建立上游", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        (self.repo / "README.md").write_text("只推 main\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 推送当前分支", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(git(self.remote, "rev-parse", "main"), git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual(git(self.remote, "for-each-ref", "--format=%(refname)", "refs/heads/other"), "")
+
+    def test_first_push_ignores_force_and_redirect_configuration(self):
+        git(self.repo, "config", "remote.origin.push", "+refs/heads/main:refs/heads/other")
+        (self.repo / "README.md").write_text("只推 main\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 首次安全推送", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(git(self.remote, "rev-parse", "main"), git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual(git(self.remote, "for-each-ref", "--format=%(refname)", "refs/heads/other"), "")
+
+    def test_first_push_cannot_overwrite_diverged_remote(self):
+        git(self.repo, "config", "remote.origin.push", "+refs/heads/main:refs/heads/main")
+        subprocess.run(["git", "clone", str(self.remote), str(self.other)], check=True, capture_output=True)
+        git(self.other, "config", "user.name", "其他用户")
+        git(self.other, "config", "user.email", "other@example.com")
+        git(self.other, "commit", "--allow-empty", "-m", "docs: 远程独立提交")
+        git(self.other, "push", "origin", "HEAD:main")
+        remote_before = git(self.remote, "rev-parse", "main")
+        (self.repo / "README.md").write_text("本地无共同历史\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 不应覆盖", "--", "README.md", allow_dirty=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "push_failed")
+        self.assertEqual(git(self.remote, "rev-parse", "main"), remote_before)
+
+    def test_common_private_key_names_are_blocked(self):
+        for name in ("id_rsa", "id_ed25519", ".netrc"):
+            with self.subTest(name=name):
+                (self.repo / name).write_text("测试占位，不是真实凭据\n", encoding="utf-8")
+                result = self.sync("--message", "chore: 不应提交", "--", name, allow_dirty=True)
+                self.assertEqual(json.loads(result.stdout)["status"], "blocked_sensitive_path")
+                self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "")
+
+    def test_deletion_is_committed_and_pushed(self):
+        result = self.sync("--message", "docs: 删除说明", "--", "README.md", allow_dirty=True)
+        (self.repo / "README.md").unlink()
+        result = self.sync("--message", "docs: 删除说明", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "pushed")
+        self.assertEqual(git(self.repo, "log", "-1", "--pretty=%s"), "docs: 删除说明")
+
+    def test_error_output_redacts_embedded_credentials(self):
+        git(self.repo, "remote", "set-url", "origin", "https://user:secret-token@example.invalid/repo.git")
+        (self.repo / "README.md").write_text("触发错误\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 触发错误", "--", "README.md", allow_dirty=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("secret-token", result.stdout)
+        self.assertNotIn("secret-token", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
