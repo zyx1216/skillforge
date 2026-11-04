@@ -40,6 +40,18 @@ SSH 命令同样在 Windows PowerShell 中执行。
 
 未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。Codex 会明确提醒你在 Windows PowerShell 中完成上述步骤。
 
+### 代理连接失败
+
+如果出现 `proxy_error`，说明 Git 配置了代理但无法连接。Codex 会显示当前代理地址，先检查代理软件是否启动、端口是否一致。
+
+如果你确认当前网络能直连 GitHub，可在**项目目录的 PowerShell** 中仅本次绕过代理：
+
+```powershell
+git -c http.proxy= -c https.proxy= push
+```
+
+这不会修改全局代理配置。skill 不会自动绕过或修改代理；其他网络问题会返回 `remote_unavailable`。
+
 ## 功能
 
 - 只提交当前任务相关路径，避免混入无关改动。
@@ -80,7 +92,7 @@ python "<skill目录>/scripts/sync.py" --message "feat: 添加用户登录" --al
 
 `--allow-dirty` 表示你已确认传入路径的改动均由本任务产生，不会绕过全仓库预暂存检查。在目标仓库根目录运行，脚本路径使用安装后的绝对路径。
 
-可能状态：`pushed`、`no_changes`、`missing_upstream`、`authentication_required`、`remote_unavailable`、`blocked_sensitive_path`、`push_failed`、`git_error`、`invalid_arguments`、`preexisting_staged_changes`、`preexisting_dirty_paths`。
+可能状态：`pushed`、`no_changes`、`missing_upstream`、`authentication_required`、`proxy_error`、`remote_unavailable`、`blocked_sensitive_path`、`push_failed`、`git_error`、`invalid_arguments`、`preexisting_staged_changes`、`preexisting_dirty_paths`。
 
 沙箱和命令审批仍然有效。GitHub 凭据使用你已有的 Git 配置，本项目不会读取或保存 Token。
 

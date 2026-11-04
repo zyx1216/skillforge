@@ -1,9 +1,11 @@
 import json
+import http.server
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import threading
 from pathlib import Path
 
 
@@ -175,6 +177,23 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(report["status"], "authentication_required")
         self.assertIn("gh auth login", report["setup"])
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), before)
+
+    def test_proxy_failure_returns_proxy_troubleshooting(self):
+        server = http.server.HTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            git(self.repo, "remote", "set-url", "origin", f"http://127.0.0.1:{server.server_port}/repo.git")
+        finally:
+            server.server_close()
+        git(self.repo, "config", "http.proxy", "http://127.0.0.1:1")
+        (self.repo / "README.md").write_text("代理未启动\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 代理测试", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 2)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "proxy_error")
+        self.assertIn("127.0.0.1:1", report["setup"])
+        self.assertIn("git -c http.proxy= -c https.proxy= push", report["setup"])
 
     def test_common_private_key_names_are_blocked(self):
         for name in ("id_rsa", "id_ed25519", ".netrc"):

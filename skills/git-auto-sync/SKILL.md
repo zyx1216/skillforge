@@ -34,6 +34,7 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
    - `missing_upstream`：本地提交已保留。已有 GitHub 空仓库时提示关联地址；需要新建仓库时，先确认仓库名和公开/私有，未经两项确认不得创建。
    - `authentication_required`：预检发现未登录、凭据失效或账号无权限，向用户展示 `setup` 中的配置步骤；此状态在提交前返回，不得索要 Token。
    - `remote_unavailable`：远程地址不存在、网络不可用或无法确认权限，展示脱敏错误并让用户检查地址与网络。
+   - `proxy_error`：代理未启动或端口错误。展示 `setup` 中的排查步骤；不得自动修改代理或自动绕过，只有用户明确同意直连时才建议其手动使用一次性绕过命令。
    - `blocked_sensitive_path`：敏感文件未提交，告知用户具体路径。
    - `push_failed`：本地提交已保留，报告 Git 错误；不要强推，不要自动 merge 或 rebase。
    - `preexisting_staged_changes` / `preexisting_dirty_paths`：用户已有改动需要人工拆分，不要绕过检查。

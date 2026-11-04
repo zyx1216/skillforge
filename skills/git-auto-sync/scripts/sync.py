@@ -22,6 +22,7 @@ AUTH_ERROR = re.compile(
     r"invalid username|repository not found|not found|403|401",
     re.IGNORECASE,
 )
+PROXY_ERROR = re.compile(r"proxy|Failed to connect", re.IGNORECASE)
 SETUP_GUIDANCE = (
     "GitHub 凭据未配置、已失效或当前账号无权访问远程。请打开 Windows PowerShell"
     "（Win+R 输入 powershell），不要在 Codex 对话框发送命令，也无需进入项目目录。"
@@ -84,6 +85,15 @@ def preflight_remote(remote_name, remote_branch):
     error = sanitize(probe.stderr.strip())
     if AUTH_ERROR.search(error):
         return report("authentication_required", 6, error=error, setup=SETUP_GUIDANCE)
+    configured_proxy = run_git(["config", "--get", "http.proxy"], check=False).stdout.strip()
+    if configured_proxy and PROXY_ERROR.search(error):
+        setup = (
+            f"当前 Git HTTP 代理为 {configured_proxy}，连接失败。请先启动代理软件并核对端口；"
+            "如果你知道当前网络可以直连 GitHub，可在项目目录的 PowerShell 中仅本次绕过代理："
+            "git -c http.proxy= -c https.proxy= push。"
+            "该命令不修改全局配置。Codex 不会自动绕过或修改你的代理。"
+        )
+        return report("proxy_error", 2, error=error, proxy=configured_proxy, setup=setup)
     return report("remote_unavailable", 2, error=error or "无法访问远程仓库")
 
 

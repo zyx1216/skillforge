@@ -25,6 +25,7 @@
 - 2026-11-04：必须提供 GitHub 凭据预配置流程；未配置时由 Codex 返回配置提醒，不能只在 push 失败后给原始报错。
 - 2026-11-04：增加 HTTPS/SSH 配置文档与提交前 `authentication_required` 预检；16 项测试通过。
 - 2026-11-04：首次上传必须分别确认仓库名和公开/私有，不能默认公开；建议英文短横线命名、优先私有。
+- 2026-11-04：公开仓库 `zyx1216/git-auto-sync-skill` 已发布；首次推送遇到失效代理，因此其他人遇到时需返回代理排查和一次性手动直连说明，不自动改代理。
 
 ## 重要外部资源
 - 参考项目：`juandelossantos/another-agent-skills`、`hyonchoi/git-atomic-commits`、`charlesjones-dev/ai-agent-plugins`。
