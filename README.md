@@ -4,6 +4,26 @@
 
 它不是文件监听器。Codex 未运行时不会同步，也不会因为你手动保存文件而自动提交。
 
+## 前置配置 GitHub 凭据
+
+不需要把 GitHub 密码或 Token 提供给 Codex，skill 只复用本机已有凭据。
+
+### HTTPS（推荐）
+
+1. 安装 GitHub CLI，并确认 `gh --version` 可用。
+2. 运行 `gh auth login`。
+3. 依次选择 `GitHub.com`、`HTTPS`、浏览器登录，并在浏览器中授权。
+4. 运行 `gh auth setup-git`，让 Git 使用 GitHub CLI 凭据。
+5. 运行 `gh auth status` 检查登录状态。
+
+### SSH
+
+1. 在本机生成或复用 SSH 密钥，并把公钥添加到 GitHub 账号。
+2. 确认仓库远程使用 SSH 地址，例如 `git@github.com:用户名/仓库.git`。
+3. 运行 `ssh -T git@github.com` 验证连接。
+
+未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。
+
 ## 功能
 
 - 只提交当前任务相关路径，避免混入无关改动。
@@ -35,7 +55,7 @@ python "<skill目录>/scripts/sync.py" --message "feat: 添加用户登录" --al
 
 `--allow-dirty` 表示你已确认传入路径的改动均由本任务产生，不会绕过全仓库预暂存检查。在目标仓库根目录运行，脚本路径使用安装后的绝对路径。
 
-可能状态：`pushed`、`no_changes`、`missing_upstream`、`blocked_sensitive_path`、`push_failed`、`git_error`、`invalid_arguments`、`preexisting_staged_changes`、`preexisting_dirty_paths`。
+可能状态：`pushed`、`no_changes`、`missing_upstream`、`authentication_required`、`remote_unavailable`、`blocked_sensitive_path`、`push_failed`、`git_error`、`invalid_arguments`、`preexisting_staged_changes`、`preexisting_dirty_paths`。
 
 沙箱和命令审批仍然有效。GitHub 凭据使用你已有的 Git 配置，本项目不会读取或保存 Token。
 

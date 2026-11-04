@@ -17,6 +17,17 @@ CREDENTIAL_URL = re.compile(r"(https?://)[^/\s:@]+:[^/\s@]+@", re.IGNORECASE)
 ASSIGNED_SECRET = re.compile(
     r"(?i)\b(password|passwd|token|api[_-]?key|secret|access[_-]?key)\b(\s*[:=]\s*)([^\s]+)"
 )
+AUTH_ERROR = re.compile(
+    r"authentication|permission denied|access denied|could not read|"
+    r"invalid username|repository not found|not found|403|401",
+    re.IGNORECASE,
+)
+SETUP_GUIDANCE = (
+    "GitHub 凭据未配置、已失效或当前账号无权访问远程。请先执行 gh auth login，"
+    "按提示选择 GitHub.com、HTTPS 和浏览器登录，再执行 gh auth setup-git；"
+    "使用 SSH 时改为配置本机 SSH 密钥并用 ssh -T git@github.com 验证。"
+    "不要把密码或 Token 发给 Codex。配置后重新运行本任务。"
+)
 
 
 def report(status, exit_code, **details):
@@ -46,6 +57,32 @@ def is_sensitive(path):
     if name in SENSITIVE_NAMES or name.startswith(".env."):
         return name not in {".env.example", ".env.template", ".env.sample"}
     return name.endswith(SENSITIVE_SUFFIXES) or name.endswith(".secret")
+
+
+def resolve_push_target():
+    branch = run_git(["branch", "--show-current"]).stdout.strip()
+    if not branch:
+        return None
+    upstream = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], check=False)
+    if upstream.returncode == 0:
+        remote_name = run_git(["config", f"branch.{branch}.remote"], check=False).stdout.strip()
+        merge_ref = run_git(["config", f"branch.{branch}.merge"], check=False).stdout.strip()
+        if remote_name and merge_ref.startswith("refs/heads/"):
+            return remote_name, merge_ref.removeprefix("refs/heads/"), branch, upstream.stdout.strip(), False
+        return None
+    if run_git(["remote"]).stdout.splitlines() == ["origin"]:
+        return "origin", branch, branch, f"origin/{branch}", True
+    return None
+
+
+def preflight_remote(remote_name, remote_branch):
+    probe = run_git(["ls-remote", "--heads", remote_name, remote_branch], check=False)
+    if probe.returncode == 0:
+        return None
+    error = sanitize(probe.stderr.strip())
+    if AUTH_ERROR.search(error):
+        return report("authentication_required", 6, error=error, setup=SETUP_GUIDANCE)
+    return report("remote_unavailable", 2, error=error or "无法访问远程仓库")
 
 
 def parse_args():
@@ -92,29 +129,24 @@ def main():
             return report("no_changes", 0)
         if run_git(["diff", "--cached", "--quiet"], check=False).returncode == 0:
             return report("no_changes", 0)
+        target = resolve_push_target()
+        if target is None:
+            run_git(["commit", "-m", args.message])
+            commit = run_git(["rev-parse", "HEAD"]).stdout.strip()
+            return report("missing_upstream", 2, commit=commit, error="没有可安全确定的当前分支 upstream")
+        remote_name, remote_branch, branch, upstream_name, first_push = target
+        blocked = preflight_remote(remote_name, remote_branch)
+        if blocked is not None:
+            return blocked
         run_git(["commit", "-m", args.message])
         commit = run_git(["rev-parse", "HEAD"]).stdout.strip()
-        upstream = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], check=False)
-        branch = run_git(["branch", "--show-current"]).stdout.strip()
-        if not branch:
-            return report("missing_upstream", 2, commit=commit, error=" detached HEAD 不能自动推送")
-        if upstream.returncode != 0:
-            remotes = run_git(["remote"]).stdout.splitlines()
-            remote_head = run_git(["ls-remote", "--heads", "origin", branch], check=False)
-            if remotes != ["origin"] or not branch or remote_head.returncode != 0:
-                return report("missing_upstream", 2, commit=commit)
+        if first_push:
             push = run_git([
                 "push", "-u", "origin", f"refs/heads/{branch}:refs/heads/{branch}",
             ], check=False)
             if push.returncode != 0:
                 return report("push_failed", 4, commit=commit, error=sanitize(push.stderr.strip()))
             return report("pushed", 0, commit=commit, upstream=f"origin/{branch}")
-        upstream_name = upstream.stdout.strip()
-        remote_name = run_git(["config", f"branch.{branch}.remote"], check=False).stdout.strip()
-        merge_ref = run_git(["config", f"branch.{branch}.merge"], check=False).stdout.strip()
-        if not remote_name or not merge_ref.startswith("refs/heads/"):
-            return report("missing_upstream", 2, commit=commit, error="upstream 格式无法安全解析")
-        remote_branch = merge_ref.removeprefix("refs/heads/")
         push = run_git(["push", remote_name, f"refs/heads/{branch}:refs/heads/{remote_branch}"], check=False)
         if push.returncode != 0:
             return report("push_failed", 4, commit=commit, error=sanitize(push.stderr.strip()))

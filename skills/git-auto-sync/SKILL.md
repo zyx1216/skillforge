@@ -7,6 +7,10 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
 
 用户明确启用后，在每次任务完成时同步代码。此 skill 只在 Codex 会话内运行，不会监听文件，也不会在 Codex 未运行时推送。
 
+## 前置条件
+
+本机必须已有 GitHub 推送凭据。HTTPS 推荐先运行 `gh auth login`，按提示选择 GitHub.com、HTTPS 和浏览器登录，再运行 `gh auth setup-git`；SSH 用户需提前配置密钥并用 `ssh -T git@github.com` 验证。不得要求用户把密码或 Token 发给 Codex。
+
 ## 执行流程
 
 1. 修改前运行 `git status`。已有任何暂存内容，或本任务将修改的文件已有未提交改动时，停止自动同步并让用户先拆分或提交；不要保存、清空或重写用户索引。
@@ -26,6 +30,8 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
    - `pushed`：本地提交和 upstream 推送均成功。
    - `no_changes`：没有需要提交的改动。
    - `missing_upstream`：本地提交已保留，提示用户配置远程；不要自行创建仓库或修改远程。
+   - `authentication_required`：预检发现未登录、凭据失效或账号无权限，向用户展示 `setup` 中的配置步骤；此状态在提交前返回，不得索要 Token。
+   - `remote_unavailable`：远程地址不存在、网络不可用或无法确认权限，展示脱敏错误并让用户检查地址与网络。
    - `blocked_sensitive_path`：敏感文件未提交，告知用户具体路径。
    - `push_failed`：本地提交已保留，报告 Git 错误；不要强推，不要自动 merge 或 rebase。
    - `preexisting_staged_changes` / `preexisting_dirty_paths`：用户已有改动需要人工拆分，不要绕过检查。

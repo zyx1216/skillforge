@@ -165,6 +165,17 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["status"], "push_failed")
         self.assertEqual(git(self.remote, "rev-parse", "main"), remote_before)
 
+    def test_authentication_failure_returns_setup_guidance_before_commit(self):
+        before = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "remote", "set-url", "origin", str(Path(self.temp.name) / "missing.git"))
+        (self.repo / "README.md").write_text("尚未登录\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 不应提前提交", "--", "README.md", allow_dirty=True)
+        self.assertEqual(result.returncode, 6)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "authentication_required")
+        self.assertIn("gh auth login", report["setup"])
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), before)
+
     def test_common_private_key_names_are_blocked(self):
         for name in ("id_rsa", "id_ed25519", ".netrc"):
             with self.subTest(name=name):

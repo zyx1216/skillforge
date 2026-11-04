@@ -22,6 +22,8 @@
 
 ## 我的纠正（用户反馈）
 - 用户要的是 Codex 完成任务后自动 commit + push，不是文件保存监听。
+- 2026-11-04：必须提供 GitHub 凭据预配置流程；未配置时由 Codex 返回配置提醒，不能只在 push 失败后给原始报错。
+- 2026-11-04：增加 HTTPS/SSH 配置文档与提交前 `authentication_required` 预检；16 项测试通过。
 
 ## 重要外部资源
 - 参考项目：`juandelossantos/another-agent-skills`、`hyonchoi/git-atomic-commits`、`charlesjones-dev/ai-agent-plugins`。
