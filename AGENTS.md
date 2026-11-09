@@ -1,7 +1,7 @@
 # 个人 AI 自制 Skill 库 · AGENTS.md
 
 ## 项目定位
-- 本仓库是邹宇轩个人开发的 Codex skill 合集，全程开源公开。远程为 `zyx1216/git-auto-sync-skill`（PUBLIC），分支 `main`。
+- 本仓库是邹宇轩个人开发的 Codex skill 合集，全程开源公开。远程为 `zyx1216/skillforge`（PUBLIC），分支 `main`。旧名 `git-auto-sync-skill` 已于 2026-11-09 改名，GitHub 自动重定向旧地址。
 - 每个 skill 单独放在 `skills/<skill名>/` 子目录，文件自包含，可以整个目录复制安装。
 - 当前收录：`git-auto-sync`，在 Codex 完成任务并验证后生成中文提交说明、提交相关文件并推送当前分支。
 
@@ -35,6 +35,6 @@
 - 每个 skill 自己的业务规则写在它的 `SKILL.md` 和脚本里，不堆到本文件。例如 Git 禁止强推、不自动改代理、预暂存检查等规则属于 `git-auto-sync`。
 
 ## 发布说明
-- 远程：`origin = https://github.com/zyx1216/git-auto-sync-skill.git`。
+- 远程：`origin = https://github.com/zyx1216/skillforge.git`。
 - 本机全局 gitconfig 配了 `127.0.0.1:20890` 代理，代理没启动时 push 会失败。确认能直连时用 `git -c http.proxy= -c https.proxy= push` 一次性绕过，不改全局配置，具体见 `skills/git-auto-sync/references/setup.md`。
 - 未经用户确认，不发布 Release、不改仓库名和可见性。

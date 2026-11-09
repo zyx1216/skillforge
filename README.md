@@ -1,4 +1,4 @@
-# zyx-codex-skills
+# skillforge
 
 我个人开发的 Codex skill 合集，全部开源。每个 skill 放在 `skills/` 下的独立目录，文件自包含，可以整个目录复制到本地 skills 目录使用。
 

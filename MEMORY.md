@@ -7,6 +7,7 @@
 - 2026-11-09：项目从单 skill 转型为个人 AI 自制 skill 库，全程开源公开（远程已为 PUBLIC，可见性不变）。
 - 2026-11-09：每个 skill 在 `skills/<skill名>/` 下自包含，自带 `tests/`、`docs/`、`references/`；根目录只留库级文件。
 - 2026-11-09：单 skill 的凭据配置、代理排查和状态码全表移入 `skills/git-auto-sync/references/setup.md`，SKILL.md 只留决策规则和导航。
+- 2026-11-09：统一改名。本地文件夹改为 `Project_09_个人skill库`；GitHub 仓库由 `git-auto-sync-skill` 改为 `skillforge`（PUBLIC 不变，旧地址自动重定向）。库内 skill 名 `git-auto-sync` 不改。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
