@@ -9,7 +9,7 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
 
 ## 前置条件
 
-本机必须已有 GitHub 推送凭据。提醒用户配置时必须写清：在 **Windows PowerShell 窗口**执行，不是在 Codex 对话框发送，也不需要先进入项目目录。HTTPS 推荐运行 `gh auth login`，按提示选择 GitHub.com、HTTPS 和浏览器登录，成功后回到同一个 PowerShell 窗口运行 `gh auth setup-git`，最后用 `gh auth status` 检查；SSH 用户需提前配置密钥并用 `ssh -T git@github.com` 验证。不得要求用户把密码或 Token 发给 Codex。
+本机必须已有 GitHub 推送凭据，skill 只复用本机凭据，不得索要密码或 Token。需要提醒用户配置凭据，或排查认证、代理失败时，先读 [references/setup.md](references/setup.md)，按里面的 PowerShell 步骤回复，不要自创配置流程。
 
 首次上传且还没有远程仓库时，必须分别向用户确认 **GitHub 仓库名**和**可见性（公开/私有）**，两项都明确后才能创建。推荐英文小写短横线命名，并优先建议私有；不得默认公开，不得仅根据本地目录名擅自决定。已有远程时不得擅自改名或改变可见性。
 
@@ -55,3 +55,9 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
 ## 汇报
 
 分别报告本地提交哈希和推送状态。新建远程时同时报告完整仓库地址和公开/私有状态。没有 upstream 或推送失败时，明确说“本地已提交，GitHub 未更新”，不得把 commit 当成 push 成功。
+
+## 配套文件
+
+- 凭据配置、代理排查、状态码全表：[references/setup.md](references/setup.md)
+- 执行器脚本：`scripts/sync.py`
+- 测试：`tests/test_sync.py`，在仓库根目录运行 `python -m unittest discover -s skills/git-auto-sync/tests -v`

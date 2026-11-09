@@ -4,6 +4,9 @@
 - 2026-11-04：采用纯规则 skill，由 Codex 在任务完成后驱动 Git，不开发常驻脚本。
 - 2026-11-04：现用 `git-init` 与开源 `git-auto-sync` 分开维护，避免开发过程影响日常使用。
 - 2026-11-04：增加可选 Python 标准库执行器，让关键停止条件可测试；Codex 仍负责验证与提交说明。
+- 2026-11-09：项目从单 skill 转型为个人 AI 自制 skill 库，全程开源公开（远程已为 PUBLIC，可见性不变）。
+- 2026-11-09：每个 skill 在 `skills/<skill名>/` 下自包含，自带 `tests/`、`docs/`、`references/`；根目录只留库级文件。
+- 2026-11-09：单 skill 的凭据配置、代理排查和状态码全表移入 `skills/git-auto-sync/references/setup.md`，SKILL.md 只留决策规则和导航。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
@@ -18,7 +21,8 @@
 - 2026-11-04：现用 `git-init` 已加入自动提交推送规则并通过官方格式校验。
 - 2026-11-04：开源版执行器与文档完成，15 个项目测试和 4 个独立安全补测通过。
 - 2026-11-04：双视角最终审查均为 PASS；已修复预暂存混入、敏感目录残留、首次推送强推/重定向等问题。
-- 待办：用户确认公开仓库可见性后创建 GitHub 仓库并发布。
+- 2026-11-04：公开仓库 `zyx1216/git-auto-sync-skill` 已发布并推送至 `7589bd0`。
+- 2026-11-09：目录改造完成，`test_sync.py` 路径常量改为 `SKILL_DIR = parents[1]`，17 个测试在新路径全部通过。
 
 ## 我的纠正（用户反馈）
 - 用户要的是 Codex 完成任务后自动 commit + push，不是文件保存监听。
@@ -29,3 +33,5 @@
 
 ## 重要外部资源
 - 参考项目：`juandelossantos/another-agent-skills`、`hyonchoi/git-atomic-commits`、`charlesjones-dev/ai-agent-plugins`。
+- skill 结构规范：本机 `skill-creator` skill 的 SKILL.md（frontmatter、scripts/references/assets 约定、quick_validate.py）。
+- 测试新路径：`skills/git-auto-sync/tests/test_sync.py`；运行入口在仓库根目录，discover 路径为 `skills/git-auto-sync/tests`。

@@ -1,27 +1,40 @@
-# Git 自动同步 Skill · AGENTS.md
+# 个人 AI 自制 Skill 库 · AGENTS.md
 
-## 项目概览
-- 目标：开发并开源 Codex skill，在 Codex 完成项目修改后自动验证、生成中文提交说明、提交并推送。
-- 技术栈：Markdown、Codex Skill、Git、Python 标准库执行器与测试。
-- 包管理器：无运行时第三方依赖；校验器使用 Anaconda 已有 PyYAML。
+## 项目定位
+- 本仓库是邹宇轩个人开发的 Codex skill 合集，全程开源公开。远程为 `zyx1216/git-auto-sync-skill`（PUBLIC），分支 `main`。
+- 每个 skill 单独放在 `skills/<skill名>/` 子目录，文件自包含，可以整个目录复制安装。
+- 当前收录：`git-auto-sync`，在 Codex 完成任务并验证后生成中文提交说明、提交相关文件并推送当前分支。
 
-## 常用命令
-- 校验：`$env:PYTHONUTF8='1'; D:\Anaconda\python.exe <skill-creator>\scripts\quick_validate.py <skill目录>`
-- 测试：`D:\Anaconda\python.exe -m unittest discover -s tests -v`
-- 发布：测试和双视角审查通过后，使用 `gh repo create` 创建公开仓库。
+## 目录结构
+- `skills/<skill名>/` 放一个 skill 的全部文件：
+  - `SKILL.md`：必需，含 YAML frontmatter 的技能说明。
+  - `agents/openai.yaml`：UI 元数据和调用策略，按需创建。
+  - `scripts/`：可执行辅助脚本，按需创建。
+  - `references/`：按需加载的文档，例如配置和排障手册。
+  - `tests/`：这个 skill 自己的测试。
+  - `docs/`：这个 skill 的 PRD、技术规格、复盘等开发文档。
+- 根目录只放库级文件：`AGENTS.md`、`MEMORY.md`、`README.md`、`LICENSE`、`.gitignore`。新增 skill 在 `skills/` 下建子目录，不在根目录散放文件。
 
-## 架构约定
-- 正式 skill 放在 `skills/git-auto-sync/`，项目说明与开发文档不复制进 skill。
-- 只做 Codex 会话内的任务后同步，不实现文件监听、后台服务或定时任务。
-- `sync.py` 负责确定性的 Git 状态检查、提交和推送；Codex 负责验证、审阅 diff 和生成中文提交说明。
-- 自动推送针对当前分支已有 upstream，或唯一远程为 `origin` 时建立同名 upstream；禁止强推和自动改写历史。
+## 公开仓库安全规则（硬规则）
+- 本库全程公开，每次提交前必须检查 diff，确认没有 `.env`、密钥、Token、私钥和个人敏感信息。
+- 凭据只放环境变量或 `.env`；`.env` 已在 `.gitignore`，永远不提交。需要给配置模板时用 `.env.example`，只写变量名。
+- 文档和示例里不写真实密码、Token、内部地址，一律用占位符。
+- 不自动修改 GitHub 仓库可见性。当前公开状态已经用户确认；改私有、建新仓库或改名前必须再次确认。
 
-## 测试与验证
-- 修改推送规则前，先用测试表达正常、无改动、无远程、验证失败、敏感文件和远程分叉场景。
-- 推送测试使用临时本地 bare 仓库，不访问真实 GitHub 项目。
-- 发布前完成 skill 格式校验、测试、安装说明检查和双视角审查。
+## 常用命令（PowerShell，仓库根目录执行）
+- 校验单个 skill：`$env:PYTHONUTF8='1'; D:\Anaconda\python.exe C:\Users\zyx\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills\<skill名>`
+- 跑某个 skill 的测试：`$env:PYTHONUTF8='1'; D:\Anaconda\python.exe -m unittest discover -s skills/<skill名>/tests -v`
+- 必须设 `PYTHONUTF8=1`，否则 Windows 下中文按 GBK 解码会报错。
+
+## 开发约定
+- skill 命名只用小写字母、数字和短横线，64 字符以内，目录名和 skill 名保持一致。
+- 新建或大改 skill 前先看 `skill-creator` 的结构规范。`SKILL.md` 只留做决策需要的内容，配置步骤、排障和长示例放 `references/`，需要时再读。
+- 行为测试放在 skill 自己的 `tests/`，用临时目录和本地 bare 仓库，不访问真实 GitHub。
+- 许可证统一用根目录的 MIT，skill 子目录不单独放 LICENSE，除非某个 skill 用了不同许可证。
+- 提交说明用简体中文，写清改了什么、为什么，不用 `update`、`auto commit` 这类没有信息量的模板。
+- 每个 skill 自己的业务规则写在它的 `SKILL.md` 和脚本里，不堆到本文件。例如 Git 禁止强推、不自动改代理、预暂存检查等规则属于 `git-auto-sync`。
 
 ## 发布说明
-- GitHub 仓库名：`git-auto-sync-skill`。
-- 许可证：MIT。
-- 未经用户最终确认，不创建公开远程仓库、不发布 Release。
+- 远程：`origin = https://github.com/zyx1216/git-auto-sync-skill.git`。
+- 本机全局 gitconfig 配了 `127.0.0.1:20890` 代理，代理没启动时 push 会失败。确认能直连时用 `git -c http.proxy= -c https.proxy= push` 一次性绕过，不改全局配置，具体见 `skills/git-auto-sync/references/setup.md`。
+- 未经用户确认，不发布 Release、不改仓库名和可见性。

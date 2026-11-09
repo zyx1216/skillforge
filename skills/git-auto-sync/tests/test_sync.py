@@ -9,8 +9,8 @@ import threading
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "skills" / "git-auto-sync" / "scripts" / "sync.py"
+SKILL_DIR = Path(__file__).resolve().parents[1]
+SCRIPT = SKILL_DIR / "scripts" / "sync.py"
 
 
 def git(repo, *args):
