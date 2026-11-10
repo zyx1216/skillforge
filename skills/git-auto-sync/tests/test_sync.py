@@ -245,6 +245,77 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "pushed")
 
+    def test_push_stage_failure_keeps_local_commit(self):
+        self.sync("--message", "docs: 先建立 upstream", "--", "README.md", allow_dirty=True)
+        (self.repo / "README.md").write_text("推送时远程失败\n", encoding="utf-8")
+
+        class OneShotProxyHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+
+            def do_POST(self):
+                self.send_response(502)
+                self.end_headers()
+                self.wfile.write(b"Failed to connect over proxy 127.0.0.1")
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), OneShotProxyHandler)
+        port = server.server_port
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        git(self.repo, "remote", "set-url", "origin", f"http://127.0.0.1:{port}/repo.git")
+        git(self.repo, "config", "http.proxy", "")
+        git(self.repo, "config", "https.proxy", "")
+        git(self.repo, "config", "http.proxy", f"http://127.0.0.1:{port}")
+        try:
+            result = self.sync("--message", "docs: 推送失败", "--", "README.md", allow_dirty=True)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        self.assertIn(report["status"], ("push_failed", "proxy_error", "remote_unavailable"))
+        self.assertIn("commit", report)
+        self.assertEqual(git(self.repo, "log", "-1", "--pretty=%s"), "docs: 推送失败")
+
+    def test_push_stage_auth_failure_keeps_local_commit(self):
+        class WriteFailsHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"")
+
+            def do_POST(self):
+                self.send_response(500)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), WriteFailsHandler)
+        port = server.server_port
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        git(self.repo, "remote", "set-url", "origin", f"http://127.0.0.1:{port}/repo.git")
+        git(self.repo, "config", "http.proxy", "")
+        git(self.repo, "config", "https.proxy", "")
+        (self.repo / "README.md").write_text("推送时权限失效\n", encoding="utf-8")
+        try:
+            result = self.sync("--message", "docs: 权限失败", "--", "README.md", allow_dirty=True)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        self.assertIn(report["status"], ("push_failed", "authentication_required", "remote_unavailable"))
+        self.assertIn("commit", report)
+        self.assertEqual(git(self.repo, "log", "-1", "--pretty=%s"), "docs: 权限失败")
+
 
 class TimeoutConfigTests(unittest.TestCase):
     def test_default_timeout_is_30_seconds(self):

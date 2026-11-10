@@ -158,6 +158,30 @@ def preflight_remote(remote_name, remote_branch):
     return report("remote_unavailable", 2, error=error or "无法访问远程仓库")
 
 
+def classify_push_failure(error):
+    """push 失败时归类。调用方已生成 commit，这里只返回报告，不做任何回滚。"""
+    clean_error = sanitize(error)
+    configured_proxy = run_git(["config", "--get", "http.proxy"], check=False).stdout.strip()
+    kind = classify_remote_error(clean_error, configured_proxy=configured_proxy)
+    commit = run_git(["rev-parse", "HEAD"]).stdout.strip()
+    if kind == "authentication_required":
+        return report(
+            "authentication_required", 6, commit=commit,
+            error=clean_error, setup=SETUP_GUIDANCE,
+        )
+    if kind == "proxy_error":
+        setup = (
+            f"当前 Git HTTP 代理为 {configured_proxy}，推送时连接失败。请先启动代理软件并核对端口；"
+            "确认当前网络可直连 GitHub 时，可在项目目录的 PowerShell 中仅本次绕过代理："
+            "git -c http.proxy= -c https.proxy= push。该命令不修改全局配置。"
+        )
+        return report(
+            "proxy_error", 2, commit=commit,
+            error=clean_error, proxy=configured_proxy, setup=setup,
+        )
+    return report("push_failed", 4, commit=commit, error=clean_error)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="提交指定路径并推送当前分支 upstream")
     parser.add_argument("--message", required=True, help="Codex 根据实际改动生成的提交说明")
@@ -228,11 +252,11 @@ def main():
                 "push", "-u", "origin", f"refs/heads/{branch}:refs/heads/{branch}",
             ], check=False)
             if push.returncode != 0:
-                return report("push_failed", 4, commit=commit, error=sanitize(push.stderr.strip()))
+                return classify_push_failure(push.stderr.strip() or push.stdout.strip())
             return report("pushed", 0, commit=commit, upstream=f"origin/{branch}")
         push = run_git(["push", remote_name, f"refs/heads/{branch}:refs/heads/{remote_branch}"], check=False)
         if push.returncode != 0:
-            return report("push_failed", 4, commit=commit, error=sanitize(push.stderr.strip()))
+            return classify_push_failure(push.stderr.strip() or push.stdout.strip())
         return report("pushed", 0, commit=commit, upstream=upstream_name)
     except (RuntimeError, subprocess.TimeoutExpired) as error:
         return report("git_error", 1, error=sanitize(str(error)))
