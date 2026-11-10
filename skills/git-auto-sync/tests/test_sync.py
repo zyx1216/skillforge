@@ -227,6 +227,24 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "pushed")
 
+    def test_real_python_config_is_blocked_integration(self):
+        (self.repo / "settings.py").write_text(
+            'DEBUG = False\nAPI_KEY = "ghp_realvalue1234567890abcdef"\n',
+            encoding="utf-8",
+        )
+        result = self.sync("--message", "feat: 普通文件藏密钥", "--", "settings.py", allow_dirty=True)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "blocked_sensitive_path")
+        self.assertIn("settings.py", report["paths"])
+        self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "")
+
+    def test_env_example_template_is_allowed_integration(self):
+        (self.repo / ".env.example").write_text("API_KEY=your-api-key-here\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 配置模板", "--", ".env.example", allow_dirty=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "pushed")
+
 
 class TimeoutConfigTests(unittest.TestCase):
     def test_default_timeout_is_30_seconds(self):
@@ -300,6 +318,26 @@ class PorcelainPathTests(unittest.TestCase):
 
     def test_empty_output_means_no_paths(self):
         self.assertEqual(sync.parse_porcelain_paths(""), [])
+
+
+class ContentSecretTests(unittest.TestCase):
+    def test_assigned_secret_in_added_line_is_detected(self):
+        diff = "@@\n+API_KEY=ghp_realvalue1234567890\n normal line\n"
+        hits = sync.find_secret_lines(diff)
+        self.assertEqual(hits, ["API_KEY=ghp_realvalue1234567890"])
+
+    def test_removed_secret_line_is_ignored(self):
+        diff = "@@\n-API_KEY=oldvalue\n"
+        self.assertEqual(sync.find_secret_lines(diff), [])
+
+    def test_placeholder_values_are_allowed(self):
+        for line in (
+            "+API_KEY=your-api-key-here",
+            '+token = "<your-token>"',
+            "+password=${DB_PASSWORD}",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(sync.find_secret_lines(f"@@\n{line}\n"), [])
 
 
 if __name__ == "__main__":

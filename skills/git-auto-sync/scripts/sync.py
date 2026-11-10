@@ -17,6 +17,10 @@ CREDENTIAL_URL = re.compile(r"(https?://)[^/\s:@]+:[^/\s@]+@", re.IGNORECASE)
 ASSIGNED_SECRET = re.compile(
     r"(?i)\b(password|passwd|token|api[_-]?key|secret|access[_-]?key)\b(\s*[:=]\s*)([^\s]+)"
 )
+PLACEHOLDER_VALUE = re.compile(
+    r"^(?:\")?(?:<[^>]+>|\$\{[^}]+\}|[a-z0-9_]*(?:your|placeholder|example|sample|change[_-]?me|dummy|test)[a-z0-9_.-]*)(?:\")?$",
+    re.IGNORECASE,
+)
 AUTH_ERROR = re.compile(
     r"authentication|permission denied|access denied|could not read|"
     r"invalid username|403|401|denied",
@@ -104,6 +108,20 @@ def parse_porcelain_paths(raw):
     return paths
 
 
+def find_secret_lines(diff_text):
+    """只检查暂存 diff 中的新增行，返回疑似含密钥的明文行。"""
+    hits = []
+    for line in diff_text.splitlines():
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        for match in ASSIGNED_SECRET.finditer(line):
+            value = match.group(3).strip().strip('"').strip("'")
+            if value and not PLACEHOLDER_VALUE.match(value):
+                hits.append(line[1:].strip())
+                break
+    return hits
+
+
 def resolve_push_target():
     branch = run_git(["branch", "--show-current"]).stdout.strip()
     if not branch:
@@ -181,6 +199,15 @@ def main():
         if sensitive_staged:
             run_git(["reset", "--", *args.paths])
             return report("blocked_sensitive_path", 3, paths=sensitive_staged)
+        staged_diff = run_git(["diff", "--cached", "-U0", "--", *staged]).stdout
+        secret_hits = find_secret_lines(staged_diff)
+        if secret_hits:
+            run_git(["reset", "--", *args.paths])
+            return report(
+                "blocked_sensitive_path", 3,
+                paths=staged, findings=secret_hits,
+                error="暂存改动的新增行疑似包含密钥，已回滚暂存且未提交",
+            )
         if not staged:
             return report("no_changes", 0)
         if run_git(["diff", "--cached", "--quiet"], check=False).returncode == 0:
