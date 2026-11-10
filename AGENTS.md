@@ -14,6 +14,8 @@
   - `tests/`：这个 skill 自己的测试。
   - `docs/`：这个 skill 的 PRD、技术规格、复盘等开发文档。
 - 根目录只放库级文件：`AGENTS.md`、`MEMORY.md`、`README.md`、`LICENSE`、`.gitignore`。新增 skill 在 `skills/` 下建子目录，不在根目录散放文件。
+- 库根 `docs/` 放全库通用文档，当前有 `skill制作SOP.md`，规定各类型 skill 从立项到发布的统一流程；skill 自己的 PRD、复盘仍放它内部的 `docs/`。
+- 做新 skill 或大改老 skill 前，先按 `docs/skill制作SOP.md` 走，先写失败场景再写 skill，按类型选验证方式。
 
 ## 公开仓库安全规则（硬规则）
 - 本库全程公开，每次提交前必须检查 diff，确认没有 `.env`、密钥、Token、私钥和个人敏感信息。

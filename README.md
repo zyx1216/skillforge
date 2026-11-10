@@ -16,6 +16,8 @@
 |-- README.md            本文件，库首页和 skill 索引
 |-- MEMORY.md            架构决策和踩坑记录
 |-- LICENSE              全库统一 MIT
+|-- docs/
+|   `-- skill制作SOP.md  各类型 skill 从立项到发布的统一流程
 `-- skills/
     `-- <skill名>/
         |-- SKILL.md     技能说明（必需）
@@ -59,6 +61,8 @@ Copy-Item -Recurse 'skills\git-auto-sync' "$HOME\.codex\skills\git-auto-sync"
 执行器只用 Python 3 标准库，没有第三方运行时依赖。
 
 ## 开发与测试
+
+做新 skill 或大改老 skill 前，先读 [`docs/skill制作SOP.md`](docs/skill制作SOP.md)。它覆盖纪律约束、技术方法、思维模式、参考文档、脚本执行、素材模板六类 skill，规定了先写失败场景再写 skill、分类型验证和开源发布门禁的完整流程。
 
 在仓库根目录跑某个 skill 的测试（Windows 必须加 UTF-8 环境变量，否则中文按 GBK 解码报错）：
 
