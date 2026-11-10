@@ -35,6 +35,8 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
    - `authentication_required`：预检发现未登录、凭据失效或账号无权限，向用户展示 `setup` 中的配置步骤；此状态在提交前返回，不得索要 Token。
    - `remote_unavailable`：远程地址不存在、网络不可用或无法确认权限，展示脱敏错误并让用户检查地址与网络。
    - `proxy_error`：代理未启动或端口错误。执行器只探测本机回环的常见代理端口，`setup` 会给出当前在监听的替代端口和一次性命令；没有可用端口时才建议直连绕过。不得自动修改代理或自动绕过，只有用户明确同意时才建议手动执行命令。
+   - `network_choice_required`：连接状态机启用后直连重试三次全败，需要用户决定继续直连还是提供代理。展示诊断里的重试次数、已记住代理是否存活、系统代理是否残留，按 [references/setup.md](references/setup.md) 给选项，不自动改网络。
+   - `direct_unavailable`：用户选了继续直连，第二轮三次仍全败。明确告知当前窗口直连 GitHub 不可用，不再重试，等用户切换网络或提供代理。
    - `blocked_sensitive_path`：敏感文件未提交，告知用户具体路径。
    - `push_failed`：本地提交已保留，报告 Git 错误；不要强推，不要自动 merge 或 rebase。
    - `preexisting_staged_changes` / `preexisting_dirty_paths`：用户已有改动需要人工拆分，不要绕过检查。
@@ -46,6 +48,9 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
 - 已有 upstream 时只推送当前分支的 upstream。没有 upstream 时，仅在远程列表唯一为 `origin`、当前为具名分支且 `origin` 可访问时，执行 `git push -u origin <当前分支>`；其他情况保留本地提交并停止。
 - 禁止 `--force`、`--force-with-lease` 和其他改写远程历史的操作。
 - 不自动重试认证或网络失败；最多由用户判断后重新执行。
+- 连接状态机默认关闭，只有设置 `GIT_SYNC_NETWORK_STATE=1` 才启用。启用后直连最多重试 3 次、单次超时约 6 秒、间隔 1 到 2 秒；三败才停下询问，选继续直连再做一轮即止，不无限重试。
+- 代理只通过一次性 `git -c http.proxy=...` 注入，不改全局 gitconfig。用户选“记住”才写入 `~/.git-auto-sync/proxy.json`，该文件在仓库外、不进版本库，删除即清除。远程代理地址标记风险，本机回环地址才视为安全。
+- 系统代理只检测不自动复位：识别出残留或节点问题后提示用户，复位操作由用户自己完成。
 - 沙箱或命令审批要求用户批准时，正常请求批准，不尝试绕过。
 - 首次创建仓库前分别确认名称与可见性，默认建议私有；已有仓库的公开/私有状态不自动修改。
 - 保护分支或需要 Pull Request 的仓库不启用直接推送，改为提交后提示用户走 PR。
