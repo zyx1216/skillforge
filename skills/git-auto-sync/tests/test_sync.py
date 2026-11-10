@@ -48,6 +48,7 @@ class SyncTests(unittest.TestCase):
         env = os.environ.copy()
         env["LC_ALL"] = "C.UTF-8"
         env["PYTHONUTF8"] = "1"
+        env["GIT_SYNC_TEST_DIRECT"] = "success"
         command = [sys.executable, str(SCRIPT), *args]
         if allow_dirty:
             command.insert(2, "--allow-dirty")

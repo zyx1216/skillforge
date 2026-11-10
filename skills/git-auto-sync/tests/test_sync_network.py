@@ -45,7 +45,7 @@ class SyncNetworkTests(unittest.TestCase):
         env["LC_ALL"] = "C.UTF-8"
         env["PYTHONUTF8"] = "1"
         env["GIT_SYNC_STATE_HOME"] = str(self.state_home)
-        env["GIT_SYNC_NETWORK_STATE"] = "1"
+        env["GIT_SYNC_TEST_DIRECT"] = "success"
         if extra_env:
             env.update(extra_env)
         command = [sys.executable, str(SCRIPT), "--allow-dirty", *args]

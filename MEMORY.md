@@ -13,7 +13,7 @@
 - 2026-11-10：测试夹具结论：本地文件协议远程忽略 http.proxy，dumb HTTP 假服务器无法复刻真实 GitHub 的 401 文本。错误分类正确性靠纯函数测试，集成测试只锁“push 失败必须保留本地提交”。真实 GitHub 行为见 `skills/git-auto-sync/docs/e2e-手动清单.md`。
 - 2026-11-10：集成测试用独立子进程跑 `sync.py`（`self.sync` 走 `subprocess`），测试进程里的 monkeypatch 传不进去，所以不能在 `SyncTests` 里 mock `detect_open_proxy_ports`。涉及机器环境（如本机代理端口是否在监听）的断言要收窄成各分支公共子串，具体分支文案交给同进程的 `ProxyPortProbeTests` 用 mock 确定性覆盖，否则在有代理的机器上会 flaky。
 - 2026-11-10：第三轮优化加国内网络连接状态机，拆成 `network.py`（TCP 探测、直连重试、Windows 系统代理残留检测）、`proxy_pref.py`（代理偏好本地状态文件）、`connection.py`（状态机决策）、`network_adapter.py`（对接 sync.py）四个模块，测试从 40 个增至 83 个。
-- 2026-11-10：状态机用显式开关 `GIT_SYNC_NETWORK_STATE=1` 启用，默认关闭保持旧行为。原因是默认跑真实直连探测会让既有 40 个测试在本机三败后提前拦下，一轮红了 12 个。开关关闭时适配层直接返回 direct，离线测试零网络依赖。
+- 2026-11-10：状态机默认启用，`GIT_SYNC_NETWORK_STATE=0` 只作为显式关闭的逃生舱。最初实现成"设 1 才启用"，导致默认行为和“自动消化抖动”的目标脱节；改为默认启用后，所有测试夹具统一注入 `GIT_SYNC_TEST_DIRECT=success`，探测确定性成功、零真实联网，旧测试行为不变。
 - 2026-11-10：子进程测试的网络隔离方案是环境变量注入：`GIT_SYNC_TEST_DIRECT` 控制直连成败、`GIT_SYNC_TEST_PROXY_ALIVE` 控制代理端口探测、`GIT_SYNC_TEST_SYSTEM_PROXY` 模拟系统代理、`GIT_SYNC_STATE_HOME` 把状态文件指到临时目录。适配层见到测试变量就走 fake，线上不设这些变量才用真实 socket 和注册表。
 - 2026-11-10：系统代理残留判定看“开关是否开 + 指向端口有无服务”，端口无服务才叫残留，有服务但连不上归节点或规则问题。只检测不自动复位，复位方法写进 setup.md，不绑定具体代理软件品牌。
 

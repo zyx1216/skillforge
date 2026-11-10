@@ -20,7 +20,6 @@ class DecideNetworkActionTests(unittest.TestCase):
         env = {
             "GIT_SYNC_TEST_DIRECT": "success",
             "GIT_SYNC_STATE_HOME": self.temp.name,
-            "GIT_SYNC_NETWORK_STATE": "1",
         }
         env.update(overrides)
         return env
@@ -96,6 +95,19 @@ class DecideNetworkActionTests(unittest.TestCase):
         )
         result = network_adapter.decide_network_action(env)
         self.assertIn("system_proxy_node_issue", result["reasons"])
+
+    def test_state_machine_is_enabled_by_default(self):
+        env = self.base_env(GIT_SYNC_TEST_DIRECT="fail")
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "need_choice")
+
+    def test_zero_disables_state_machine_as_escape_hatch(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_NETWORK_STATE="0",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "direct")
 
 
 if __name__ == "__main__":
