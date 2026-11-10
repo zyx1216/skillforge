@@ -1,0 +1,127 @@
+import unittest
+from pathlib import Path
+
+SKILL_DIR = Path(__file__).resolve().parents[1]
+import sys
+
+sys.path.insert(0, str(SKILL_DIR / "scripts"))
+import connection
+
+
+class StateMachineTests(unittest.TestCase):
+    def make_policy(
+        self, direct_results=None, proxy_port_probe=None,
+        saved_proxy=None, system_proxy=None, remember=False,
+        retry_direct=False, provided_proxy=None,
+    ):
+        direct = list(direct_results or [])
+
+        def direct_probe():
+            if not direct:
+                return False
+            return direct.pop(0)
+
+        return connection.ConnectionPolicy(
+            direct_probe=direct_probe,
+            proxy_port_probe=proxy_port_probe or (lambda url: True),
+            saved_proxy=saved_proxy,
+            system_proxy=system_proxy,
+            remember=remember,
+            provided_proxy=provided_proxy,
+            retry_direct=retry_direct,
+            sleep=lambda _: None,
+        )
+
+    def test_direct_success_returns_direct_without_diagnostics(self):
+        policy = self.make_policy(direct_results=[True])
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.DIRECT)
+
+    def test_three_direct_failures_asks_user_when_no_saved_proxy(self):
+        policy = self.make_policy(direct_results=[False, False, False])
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.NEED_CHOICE)
+        self.assertTrue(decision.diagnostics)
+
+    def test_three_failures_auto_falls_back_to_saved_proxy(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False],
+            saved_proxy="http://127.0.0.1:7894",
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.USE_SAVED_PROXY)
+        self.assertEqual(decision.proxy_url, "http://127.0.0.1:7894")
+
+    def test_dead_saved_proxy_asks_again_instead_of_looping(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False],
+            saved_proxy="http://127.0.0.1:7894",
+            proxy_port_probe=lambda url: False,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.NEED_CHOICE)
+        self.assertIn("saved_proxy_unreachable", decision.reasons)
+
+    def test_retry_direct_runs_another_round_then_stops(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False, False, False, False],
+            retry_direct=True,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.DIRECT_UNAVAILABLE)
+        self.assertEqual(policy.direct_attempts, 6)
+
+    def test_retry_direct_succeeds_in_second_round(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False, True],
+            retry_direct=True,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.DIRECT)
+
+    def test_user_provided_proxy_is_used_once_when_not_remembered(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False],
+            provided_proxy="socks5h://127.0.0.1:7894",
+            remember=False,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.USE_PROVIDED_PROXY)
+        self.assertEqual(decision.proxy_url, "socks5h://127.0.0.1:7894")
+        self.assertFalse(decision.should_save)
+
+    def test_remembered_proxy_is_marked_to_save(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False],
+            provided_proxy="http://127.0.0.1:20891",
+            remember=True,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.USE_PROVIDED_PROXY)
+        self.assertTrue(decision.should_save)
+
+    def test_residual_system_proxy_is_reported(self):
+        status = connection.SystemProxyInfo(
+            host="127.0.0.1", port=7890, listening=False, residual=True,
+        )
+        policy = self.make_policy(
+            direct_results=[False, False, False], system_proxy=status,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.NEED_CHOICE)
+        self.assertIn("system_proxy_residual", decision.reasons)
+
+    def test_live_system_proxy_is_node_issue_not_residual(self):
+        status = connection.SystemProxyInfo(
+            host="127.0.0.1", port=7890, listening=True, residual=False,
+        )
+        policy = self.make_policy(
+            direct_results=[False, False, False], system_proxy=status,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertIn("system_proxy_node_issue", decision.reasons)
+        self.assertNotIn("system_proxy_residual", decision.reasons)
+
+
+if __name__ == "__main__":
+    unittest.main()
