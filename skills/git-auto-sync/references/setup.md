@@ -52,6 +52,16 @@ git -c http.proxy= -c https.proxy= push
 
 这不会修改全局代理配置。skill 不会自动绕过或修改代理；其他网络问题会返回 `remote_unavailable`。
 
+### HTTP 代理端口在监听但 TLS 中断
+
+代理软件在运行、端口也在监听，Git 仍报 `TLS connect error ... unexpected eof while reading` 时，说明这个 HTTP 代理端口对 GitHub 的 HTTPS 隧道有问题，换同一软件的 SOCKS5 端口通常能通。2026-11-10 在本机实测：HTTP 端口 20891 连续两次 TLS 中断，改用 SOCKS5 端口 7894 后一次成功。
+
+```powershell
+git -c http.proxy=socks5h://127.0.0.1:7894 -c https.proxy=socks5h://127.0.0.1:7894 push
+```
+
+用 `socks5h` 而不是 `socks5`，域名解析也交给代理处理。先跑 `netstat -ano | findstr LISTENING` 确认本机实际在监听的端口，再替换命令里的端口号。这同样只是一次性参数，不改全局配置。
+
 ### 让配置长期生效
 
 如果代理软件的固定端口和全局 Git 配置不一致，可以让用户自己决定是否更新全局配置。查看当前配置用 `git config --get http.proxy`，修改用 `git config --global http.proxy http://127.0.0.1:<端口>`。执行器不替用户改全局配置。

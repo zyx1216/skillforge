@@ -20,6 +20,7 @@
 - Windows 下官方 `quick_validate.py` 默认按 GBK 读取中文；需设置 `PYTHONUTF8=1`，无需安装依赖。
 - Windows Git 输出可能使用本地编码；执行器统一设置 `LC_ALL=C.UTF-8` 和 UTF-8 JSON 输出。
 - 本地 bare 测试远程必须设置 `HEAD` 指向 `main`，否则 clone 没有工作树，远程分叉测试也会失真。
+- 2026-11-10 代理实测：HTTP 代理 `127.0.0.1:20891` 端口在监听，但对 GitHub HTTPS 连续两次报 TLS unexpected eof；改用 `socks5h://127.0.0.1:7894`（同进程监听）一次成功。核对远程用 `git -c http.proxy=socks5h://127.0.0.1:7894 -c https.proxy=socks5h://127.0.0.1:7894 ls-remote origin`。全局 gitconfig 仍指向失效的 20890，是否统一改端口等用户拍板，执行器不自动改。
 
 ## 当前进度
 - 2026-11-04：现用 `git-init` 已加入自动提交推送规则并通过官方格式校验。
@@ -27,6 +28,7 @@
 - 2026-11-04：双视角最终审查均为 PASS；已修复预暂存混入、敏感目录残留、首次推送强推/重定向等问题。
 - 2026-11-04：公开仓库 `zyx1216/git-auto-sync-skill` 已发布并推送至 `7589bd0`。
 - 2026-11-09：目录改造完成，`test_sync.py` 路径常量改为 `SKILL_DIR = parents[1]`，17 个测试在新路径全部通过。
+- 2026-11-10：第二轮优化 8 个提交全部到达远程。`git ls-remote` 确认 `zyx1216/skillforge` 的 `HEAD` 和 `refs/heads/main` 都是 `ffc6e90`，与本地一致，工作区干净无 ahead。E2E 场景 1 的公开远程链路部分已覆盖，执行器直连 GitHub 的完整 `pushed` 链路仍待实测，详见 `skills/git-auto-sync/docs/e2e-手动清单.md`。
 
 ## 我的纠正（用户反馈）
 - 用户要的是 Codex 完成任务后自动 commit + push，不是文件保存监听。
