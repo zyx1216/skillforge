@@ -15,6 +15,7 @@ from network import (
     RETRY_DELAY_MIN,
     http_connect_tunnel,
 )
+import proxy_pref
 
 
 DIRECT = "direct"
@@ -109,12 +110,20 @@ class ConnectionPolicy:
 
 class ConnectionDecision:
     def __init__(self, outcome, proxy_url=None, should_save=False,
+                 remote_risk=False,
                  diagnostics=None, reasons=None):
         self.outcome = outcome
         self.proxy_url = proxy_url
         self.should_save = should_save
+        self.remote_risk = remote_risk
         self.diagnostics = diagnostics or {}
         self.reasons = reasons or []
+
+
+def _proxy_remote_risk(proxy_url):
+    if not proxy_url:
+        return False
+    return not proxy_pref.is_loopback(proxy_url)
 
 
 def build_diagnostics(policy):
@@ -162,6 +171,7 @@ def plan_connection(policy):
                 USE_PROVIDED_PROXY,
                 proxy_url=policy.provided_proxy,
                 should_save=policy.remember,
+                remote_risk=_proxy_remote_risk(policy.provided_proxy),
             )
         return ConnectionDecision(
             NEED_CHOICE,
@@ -174,7 +184,9 @@ def plan_connection(policy):
         usable, reason = policy.proxy_usable(policy.saved_proxy)
         if usable:
             return ConnectionDecision(
-                USE_SAVED_PROXY, proxy_url=policy.saved_proxy,
+                USE_SAVED_PROXY,
+                proxy_url=policy.saved_proxy,
+                remote_risk=_proxy_remote_risk(policy.saved_proxy),
             )
         reasons.append(reason)
 

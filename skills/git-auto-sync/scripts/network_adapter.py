@@ -122,6 +122,7 @@ def decide_network_action(env):
         "outcome": decision.outcome,
         "proxy_url": decision.proxy_url,
         "should_save": decision.should_save,
+        "remote_risk": decision.remote_risk,
         "diagnostics": decision.diagnostics,
         "reasons": decision.reasons,
     }

@@ -159,6 +159,27 @@ class DecideNetworkActionTests(unittest.TestCase):
         result = network_adapter.decide_network_action(env)
         self.assertEqual(result["outcome"], "use_saved_proxy")
 
+    def test_remote_proxy_is_flagged_in_decision(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_PROXY="http://10.20.30.40:8080",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="1",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "use_provided_proxy")
+        self.assertTrue(result["remote_risk"])
+
+    def test_loopback_proxy_is_not_flagged(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_PROXY="http://127.0.0.1:20891",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="1",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertFalse(result["remote_risk"])
+
 
 if __name__ == "__main__":
     unittest.main()
