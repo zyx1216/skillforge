@@ -32,6 +32,17 @@ SETUP_GUIDANCE = (
     "不要把密码或 Token 发给 Codex。配置后重新运行本任务。"
 )
 
+DEFAULT_TIMEOUT = 30
+
+
+def resolve_timeout(env):
+    raw = (env.get("GIT_SYNC_TIMEOUT") or "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_TIMEOUT
+    return value if value > 0 else DEFAULT_TIMEOUT
+
 
 def report(status, exit_code, **details):
     print(json.dumps({"status": status, **details}, ensure_ascii=False))
@@ -43,7 +54,7 @@ def run_git(args, check=True):
     env["LC_ALL"] = "C.UTF-8"
     result = subprocess.run(
         ["git", *args], text=True, encoding="utf-8",
-        capture_output=True, timeout=30, env=env,
+        capture_output=True, timeout=resolve_timeout(env), env=env,
     )
     if check and result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())

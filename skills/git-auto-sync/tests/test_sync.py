@@ -11,6 +11,8 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "sync.py"
+sys.path.insert(0, str(SKILL_DIR / "scripts"))
+import sync
 
 
 def git(repo, *args):
@@ -218,6 +220,19 @@ class SyncTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("secret-token", result.stdout)
         self.assertNotIn("secret-token", result.stderr)
+
+
+class TimeoutConfigTests(unittest.TestCase):
+    def test_default_timeout_is_30_seconds(self):
+        self.assertEqual(sync.resolve_timeout({}), 30)
+
+    def test_valid_env_override_is_used(self):
+        self.assertEqual(sync.resolve_timeout({"GIT_SYNC_TIMEOUT": "60"}), 60)
+
+    def test_invalid_values_fall_back_to_default(self):
+        for bad in ("0", "-5", "abc", ""):
+            with self.subTest(bad=bad):
+                self.assertEqual(sync.resolve_timeout({"GIT_SYNC_TIMEOUT": bad}), 30)
 
 
 if __name__ == "__main__":
