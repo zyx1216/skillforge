@@ -1,5 +1,7 @@
 import unittest
 import sys
+import http.server
+import threading
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -197,6 +199,65 @@ class EnvProxyTests(unittest.TestCase):
         self.assertIsNone(result["http_proxy"])
         self.assertIsNone(result["https_proxy"])
         self.assertIsNone(result["all_proxy"])
+
+
+class HttpConnectTests(unittest.TestCase):
+    def make_proxy_server(self, response_line):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_CONNECT(self):
+                self.path_seen = self.path
+                self.wfile.write(response_line)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        return server, thread
+
+    def test_successful_connect_tunnel_returns_true(self):
+        server, thread = self.make_proxy_server(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        try:
+            ok = network.http_connect_tunnel(
+                f"http://127.0.0.1:{server.server_port}",
+                target_host="github.com", target_port=443, timeout=3,
+            )
+        finally:
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertTrue(ok)
+
+    def test_proxy_refuses_connect_returns_false(self):
+        server, thread = self.make_proxy_server(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+        try:
+            ok = network.http_connect_tunnel(
+                f"http://127.0.0.1:{server.server_port}",
+                target_host="github.com", target_port=443, timeout=3,
+            )
+        finally:
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertFalse(ok)
+
+    def test_dead_proxy_returns_false_without_raising(self):
+        ok = network.http_connect_tunnel(
+            "http://127.0.0.1:1",
+            target_host="github.com", target_port=443, timeout=1,
+        )
+        self.assertFalse(ok)
+
+    def test_socks_proxy_skips_connect_and_falls_back_to_port_check(self):
+        class RecordingFactory:
+            def __call__(self, *args):
+                raise AssertionError("SOCKS 第一版不应尝试 HTTP CONNECT")
+
+        ok = network.http_connect_tunnel(
+            "socks5h://127.0.0.1:7894",
+            target_host="github.com", target_port=443,
+            socket_factory=RecordingFactory(),
+        )
+        self.assertFalse(ok)
 
 
 if __name__ == "__main__":

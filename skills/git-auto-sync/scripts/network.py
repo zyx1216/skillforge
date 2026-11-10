@@ -6,6 +6,7 @@
 import random
 import re
 import socket
+from urllib.parse import urlparse
 
 
 GITHUB_HOST = "github.com"
@@ -75,6 +76,41 @@ def read_env_proxies(env):
         "https_proxy": pick("https_proxy", "HTTPS_PROXY"),
         "all_proxy": pick("all_proxy", "ALL_PROXY"),
     }
+
+
+def http_connect_tunnel(
+    proxy_url, target_host=GITHUB_HOST, target_port=443,
+    timeout=DIRECT_TIMEOUT, socket_factory=None,
+):
+    """通过 HTTP 代理发 CONNECT 建隧道，2xx 才算代理真正可用。
+
+    SOCKS 代理第一版不做握手，直接返回 False，由调用方退回端口存活判断。
+    任何连接或协议异常都归为不可达，不向外抛。
+    """
+    parsed = urlparse(proxy_url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme.startswith("socks"):
+        return False
+    host = parsed.hostname
+    port = parsed.port
+    if not host or not port:
+        return False
+    factory = socket_factory or socket.socket
+    try:
+        with factory(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect((host, port))
+            request = (
+                f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
+                f"Host: {target_host}:{target_port}\r\n\r\n"
+            )
+            sock.sendall(request.encode("ascii"))
+            response = sock.recv(128).decode("iso-8859-1", errors="replace")
+        status_line = response.split("\r\n", 1)[0]
+        match = re.match(r"^HTTP/\d(?:\.\d)?\s+(\d{3})\b", status_line)
+        return bool(match and 200 <= int(match.group(1)) < 300)
+    except OSError:
+        return False
 
 
 def wait_for_direct(attempts=DIRECT_ATTEMPTS, timeout=DIRECT_TIMEOUT, probe=None, sleep=None):

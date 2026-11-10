@@ -70,6 +70,14 @@ def build_policy(env):
                 return False
             return network.tcp_reachable(parsed.hostname, parsed.port, timeout=1)
 
+    test_tunnel = env.get("GIT_SYNC_TEST_TUNNEL")
+    if test_tunnel is not None:
+        proxy_tunnel_probe = lambda url: test_tunnel == "1"
+    elif "GIT_SYNC_TEST_DIRECT" in env:
+        proxy_tunnel_probe = lambda url: True
+    else:
+        proxy_tunnel_probe = None
+
     saved_proxy = env.get("GIT_SYNC_TEST_SAVED_PROXY")
     if saved_proxy is None and "GIT_SYNC_TEST_DIRECT" not in env:
         preference = proxy_pref.load_preference(home=proxy_pref.home_from_env(env))
@@ -94,6 +102,7 @@ def build_policy(env):
         sleep=lambda _: None,
         git_proxy=_git_proxy_config(env),
         env_proxy=network.read_env_proxies(env),
+        proxy_tunnel_probe=proxy_tunnel_probe,
     )
 
 

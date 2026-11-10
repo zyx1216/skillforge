@@ -66,6 +66,8 @@ class DecideNetworkActionTests(unittest.TestCase):
         env = self.base_env(
             GIT_SYNC_TEST_DIRECT="fail",
             GIT_SYNC_PROXY="http://127.0.0.1:20891",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="1",
         )
         result = network_adapter.decide_network_action(env)
         self.assertEqual(result["outcome"], "use_provided_proxy")
@@ -76,6 +78,8 @@ class DecideNetworkActionTests(unittest.TestCase):
             GIT_SYNC_TEST_DIRECT="fail",
             GIT_SYNC_PROXY="http://127.0.0.1:20891",
             GIT_SYNC_REMEMBER_PROXY="1",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="1",
         )
         result = network_adapter.decide_network_action(env)
         self.assertTrue(result["should_save"])
@@ -133,6 +137,27 @@ class DecideNetworkActionTests(unittest.TestCase):
         self.assertFalse(result["diagnostics"]["direct_ports"]["port_443"])
         self.assertTrue(result["diagnostics"]["direct_ports"]["port_22"])
         self.assertIn("ssh_available", result["reasons"])
+
+    def test_http_proxy_with_broken_tunnel_returns_need_choice(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_PROXY="http://127.0.0.1:20891",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="0",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "need_choice")
+        self.assertIn("proxy_node_failed", result["reasons"])
+
+    def test_http_proxy_with_working_tunnel_is_used(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_TEST_SAVED_PROXY="http://127.0.0.1:20891",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="1",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "use_saved_proxy")
 
 
 if __name__ == "__main__":

@@ -98,6 +98,8 @@ class SyncNetworkTests(unittest.TestCase):
             extra_env={
                 "GIT_SYNC_TEST_DIRECT": "fail",
                 "GIT_SYNC_PROXY": "http://127.0.0.1:20891",
+                "GIT_SYNC_TEST_PROXY_ALIVE": "1",
+                "GIT_SYNC_TEST_TUNNEL": "1",
             },
         )
         self.assertEqual(result.returncode, 0, result.stderr)

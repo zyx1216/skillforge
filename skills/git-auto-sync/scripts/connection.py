@@ -6,7 +6,7 @@
 """
 from urllib.parse import urlparse
 
-from network import DIRECT_ATTEMPTS
+from network import DIRECT_ATTEMPTS, http_connect_tunnel
 
 
 DIRECT = "direct"
@@ -38,6 +38,7 @@ class ConnectionPolicy:
         system_proxy=None, remember=False, provided_proxy=None,
         retry_direct=False, sleep=None, attempts=DIRECT_ATTEMPTS,
         git_proxy=None, env_proxy=None,
+        proxy_tunnel_probe=None,
     ):
         self.direct_probe = direct_probe
         self.proxy_port_probe = proxy_port_probe or (lambda url: True)
@@ -52,6 +53,7 @@ class ConnectionPolicy:
         self.last_direct_ports = DirectPorts(False, False)
         self.git_proxy = git_proxy
         self.env_proxy = env_proxy
+        self.proxy_tunnel_probe = proxy_tunnel_probe or http_connect_tunnel
 
     def run_direct_round(self):
         """一轮直连重试，最多 attempts 次，任一成功即 True。"""
@@ -79,6 +81,20 @@ class ConnectionPolicy:
         if not host or not port:
             return False
         return bool(self.proxy_port_probe(f"{host}:{port}"))
+
+    def proxy_usable(self, proxy_url):
+        """端口存活后再验证代理是否真能建到 GitHub 的隧道。
+
+        HTTP 代理必须 CONNECT 成功；SOCKS 第一版保守处理，只要求端口存活。
+        """
+        if not self.proxy_alive(proxy_url):
+            return False, "saved_proxy_unreachable"
+        scheme = (urlparse(proxy_url).scheme or "").lower()
+        if scheme.startswith("socks"):
+            return True, None
+        if self.proxy_tunnel_probe(proxy_url):
+            return True, None
+        return False, "proxy_node_failed"
 
 
 class ConnectionDecision:
@@ -130,19 +146,27 @@ def plan_connection(policy):
         )
 
     if policy.provided_proxy:
+        usable, reason = policy.proxy_usable(policy.provided_proxy)
+        if usable:
+            return ConnectionDecision(
+                USE_PROVIDED_PROXY,
+                proxy_url=policy.provided_proxy,
+                should_save=policy.remember,
+            )
         return ConnectionDecision(
-            USE_PROVIDED_PROXY,
-            proxy_url=policy.provided_proxy,
-            should_save=policy.remember,
+            NEED_CHOICE,
+            diagnostics=build_diagnostics(policy),
+            reasons=["direct_round_failed", reason],
         )
 
     reasons = _direct_failure_reasons(policy, ["direct_round_failed"])
     if policy.saved_proxy:
-        if policy.proxy_alive(policy.saved_proxy):
+        usable, reason = policy.proxy_usable(policy.saved_proxy)
+        if usable:
             return ConnectionDecision(
                 USE_SAVED_PROXY, proxy_url=policy.saved_proxy,
             )
-        reasons.append("saved_proxy_unreachable")
+        reasons.append(reason)
 
     if policy.system_proxy:
         if policy.system_proxy.residual:
