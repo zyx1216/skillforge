@@ -30,6 +30,20 @@ SSH 命令同样在 Windows PowerShell 中执行。
 
 如果出现 `proxy_error`，说明 Git 配置了代理但无法连接。Codex 会显示当前代理地址，先检查代理软件是否启动、端口是否一致。
 
+### 为什么设了 http_proxy 环境变量还是不生效
+
+Git 自己的 `http.proxy` 配置优先级高于 `http_proxy`、`https_proxy` 这类环境变量。如果全局 Git 配置写的是旧端口，只在 PowerShell 里 `$env:http_proxy=...` 会被 Git 忽略。另外 Git 不读 `all_proxy`，所以给 `all_proxy` 设 socks5 地址对 Git 推送没有作用。
+
+### 执行器会给出的提示
+
+代理失败时，执行器只探测本机回环地址的常见代理端口（7890、7897、10808、10809、20890、20891、8080、1080），不做外网扫描。如果发现有端口在监听，`setup` 会直接给出指向该端口的一次性命令，例如：
+
+```powershell
+git -c http.proxy=http://127.0.0.1:20891 -c https.proxy=http://127.0.0.1:20891 push
+```
+
+没有探测到可用端口，且你确认当前网络能直连 GitHub 时，再用下面的命令仅本次绕过代理：
+
 如果你确认当前网络能直连 GitHub，可在项目目录的 PowerShell 中仅本次绕过代理：
 
 ```powershell
@@ -37,6 +51,10 @@ git -c http.proxy= -c https.proxy= push
 ```
 
 这不会修改全局代理配置。skill 不会自动绕过或修改代理；其他网络问题会返回 `remote_unavailable`。
+
+### 让配置长期生效
+
+如果代理软件的固定端口和全局 Git 配置不一致，可以让用户自己决定是否更新全局配置。查看当前配置用 `git config --get http.proxy`，修改用 `git config --global http.proxy http://127.0.0.1:<端口>`。执行器不替用户改全局配置。
 
 ## 执行器返回状态一览
 
@@ -49,6 +67,7 @@ git -c http.proxy= -c https.proxy= push
 | `proxy_error` | Git 配置了代理但代理连不上 |
 | `remote_unavailable` | 远程地址不存在、网络不可用或无法确认权限 |
 | `blocked_sensitive_path` | 待提交路径里有敏感文件，已拦下未提交 |
+| `blocked_sensitive_path`（带 `findings`） | 暂存 diff 的新增行疑似写死密钥，已回滚暂存且未提交 |
 | `push_failed` | 本地提交已保留，推送失败，例如远程分叉 |
 | `git_error` | Git 命令本身执行失败 |
 | `invalid_arguments` | 调用参数不对，例如没给路径或提交说明 |
@@ -57,10 +76,11 @@ git -c http.proxy= -c https.proxy= push
 
 ## 限制
 
-- 敏感文件名检查不是完整的密钥扫描，公开前仍要人工过一遍 diff。
+- 敏感文件名检查加新增行内容扫描都不是完整密钥审计，识别不了编码、拆分或拼接的密钥，公开前仍要人工过一遍 diff。
 - 保护分支或需要 PR 审查的仓库不应直接自动推送。
 - 网络、认证和远程分叉需要用户处理，执行器不会强推。
 - 它不是文件监听器，Codex 未运行时不会同步，手动保存文件不会触发提交。
+- Git 命令超时默认 30 秒，大仓库可用 `GIT_SYNC_TIMEOUT` 环境变量调大，值必须是正整数，否则回退默认。
 
 ## 测试
 

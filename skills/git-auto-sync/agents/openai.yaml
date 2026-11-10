@@ -1,4 +1,4 @@
 interface:
   display_name: "Git 自动同步"
-  short_description: "验证后生成中文提交说明，并推送当前分支"
+  short_description: "验证后扫描密钥，生成中文提交说明并安全推送当前分支"
   default_prompt: "使用 $git-auto-sync 在本次修改验证后提交相关文件并同步当前分支。"

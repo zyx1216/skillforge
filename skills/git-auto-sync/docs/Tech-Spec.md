@@ -28,15 +28,25 @@
 ## 文件结构
 
 ```text
-skills/git-auto-sync/SKILL.md
-skills/git-auto-sync/agents/openai.yaml
-tests/test_skill.py
-skills/git-auto-sync/scripts/sync.py
-README.md
-LICENSE
-PRD.md
-Tech-Spec.md
+skills/git-auto-sync/
+|-- SKILL.md
+|-- agents/openai.yaml
+|-- scripts/sync.py
+|-- references/setup.md
+|-- tests/test_sync.py
+`-- docs/
+    |-- PRD.md
+    |-- Tech-Spec.md
+    `-- 复盘.md
 ```
+
+## 2026-11-10 优化补充
+
+- 超时：`GIT_SYNC_TIMEOUT` 可覆盖默认 30 秒，非法值回退默认。
+- 错误分类：抽出纯函数 `classify_remote_error`，预检和 push 失败共用；仓库不存在归为 `remote_unavailable`，不再误报认证问题。
+- 路径解析：改用 `git status --porcelain -z`，正确处理空格、中文和重命名双段记录。
+- 内容扫描：暂存后检查 diff 新增行，疑似写死密钥时回滚暂存并返回 `blocked_sensitive_path` 加 `findings`，模板占位符放行。
+- 代理诊断：代理失败时用标准库 socket 只探测本机回环常见端口，报告在监听的替代端口和一次性命令，不修改全局配置。
 
 ## 发布门槛
 
