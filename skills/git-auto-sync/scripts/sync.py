@@ -85,6 +85,25 @@ def is_sensitive(path):
     return name.endswith(SENSITIVE_SUFFIXES) or name.endswith(".secret")
 
 
+def parse_porcelain_paths(raw):
+    """解析 git status --porcelain -z 的 NUL 分隔输出。
+
+    普通记录是"状态+空格+路径"；重命名(R)和复制(C)记录后面多跟一段源路径。
+    """
+    records = [part for part in raw.split("\0") if part]
+    paths = []
+    index = 0
+    while index < len(records):
+        record = records[index]
+        status = record[:2]
+        paths.append(record[3:])
+        if status[0] in ("R", "C"):
+            index += 1
+            paths.append(records[index])
+        index += 1
+    return paths
+
+
 def resolve_push_target():
     branch = run_git(["branch", "--show-current"]).stdout.strip()
     if not branch:
@@ -145,9 +164,10 @@ def main():
             return report("git_error", 1, error="无法读取暂存区")
         if preexisting_staged.stdout.strip():
             return report("preexisting_staged_changes", 5, error="请先处理已有暂存内容，执行器不会保存或重写用户索引")
-        dirty_paths = run_git(["status", "--porcelain", "--", *args.paths]).stdout.splitlines()
+        porcelain = run_git(["status", "--porcelain", "-z", "--", *args.paths]).stdout
+        dirty_paths = parse_porcelain_paths(porcelain)
         if dirty_paths and not args.allow_dirty:
-            return report("preexisting_dirty_paths", 5, paths=[line[3:] for line in dirty_paths])
+            return report("preexisting_dirty_paths", 5, paths=dirty_paths)
         candidates = run_git([
             "ls-files", "--cached", "--others", "--deleted", "--modified",
             "--exclude-standard", "--", *args.paths,

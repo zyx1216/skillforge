@@ -221,6 +221,12 @@ class SyncTests(unittest.TestCase):
         self.assertNotIn("secret-token", result.stdout)
         self.assertNotIn("secret-token", result.stderr)
 
+    def test_integration_reports_space_filename_without_quotes(self):
+        (self.repo / "task file.txt").write_text("本任务\n", encoding="utf-8")
+        result = self.sync("--message", "docs: 空格文件名", "--", "task file.txt", allow_dirty=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "pushed")
+
 
 class TimeoutConfigTests(unittest.TestCase):
     def test_default_timeout_is_30_seconds(self):
@@ -275,6 +281,25 @@ class ErrorClassificationTests(unittest.TestCase):
 
     def test_unknown_error_falls_back_to_remote_unavailable(self):
         self.assertEqual(sync.classify_remote_error("some strange git failure"), "remote_unavailable")
+
+
+class PorcelainPathTests(unittest.TestCase):
+    def test_plain_status_with_spaces_and_chinese(self):
+        raw = " D old name.txt\0?? 中文 文件.txt\0"
+        self.assertEqual(
+            sync.parse_porcelain_paths(raw),
+            ["old name.txt", "中文 文件.txt"],
+        )
+
+    def test_rename_returns_both_source_and_target(self):
+        raw = "R  old name.txt\0new name.txt\0 M tracked file.txt\0"
+        self.assertEqual(
+            sync.parse_porcelain_paths(raw),
+            ["old name.txt", "new name.txt", "tracked file.txt"],
+        )
+
+    def test_empty_output_means_no_paths(self):
+        self.assertEqual(sync.parse_porcelain_paths(""), [])
 
 
 if __name__ == "__main__":
