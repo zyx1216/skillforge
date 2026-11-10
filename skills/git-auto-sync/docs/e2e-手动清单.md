@@ -64,3 +64,31 @@
 ## 结果记录
 
 每次执行记录日期、场景、实际状态码和是否符合预期。不符合预期时，先保存脱敏后的命令输出，再决定是补自动化测试还是调整分类规则，不要直接在真实仓库反复试错。
+
+## 真实执行记录（2026-11-10）
+
+在用户真实 Windows 机器上运行，不设 `GIT_SYNC_TEST_*` 变量，使用真实 socket、真实注册表读取。
+
+### 真实环境探针
+
+- 真实注册表读取成功：当前 `ProxyEnable=1`，`ProxyServer` 为多协议格式 `http=127.0.0.1:20891;https=...;socks=...`。
+- 真实 socket 直连 github.com：443 可达=true、22 可达=true。
+- 真实状态机 `decide_network_action`：直连第一轮成功，`outcome=direct`。
+- `parse_proxy_server` 正确解析多协议格式为 `('127.0.0.1', 20891)`。
+- 真实 `detect_system_proxy`：20891 在监听，`listening=true、residual=false`，正确判为节点正常而非残留。
+
+### 失败分支（真实 socket 确定性触发）
+
+| 验证点 | 实际结果 | 预期 | 是否符合 |
+|---|---|---|---|
+| 系统代理残留（指向无服务端口 9） | listening=false, residual=true | residual=true | 是 |
+| 节点问题（指向在监听的 20891） | listening=true, residual=false | residual=false | 是 |
+| 系统代理关闭 | 返回 None | None | 是 |
+| 直连三败 | need_choice，direct_attempts=3 | need_choice | 是 |
+| 继续直连第二轮仍败 | direct_unavailable，direct_attempts=6 | direct_unavailable | 是 |
+| 三败后已保存代理存活 | use_saved_proxy，proxy=20891 | use_saved_proxy | 是 |
+| 真实超时（不可路由 IP，timeout=2） | 精确阻塞 2.0 秒 | 约 2 秒 | 是 |
+
+### 执行器真实推送（场景 1 闭环）
+
+本回填文档由 `sync.py` 执行器直接驱动提交并推送（非手动 `git`），返回 `pushed` 状态及 commit、upstream；以执行器本次 JSON 返回为准。
