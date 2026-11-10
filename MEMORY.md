@@ -11,6 +11,7 @@
 - 2026-11-10：新增库根 `docs/skill制作SOP.md`，作为全库通用的 skill 制作流程。按六类（纪律约束、技术方法、思维模式、参考文档、脚本执行、素材模板）分叉验证方式，主干统一为立项判断、RED 失败场景、命名目录、写 SKILL.md、配套文件、GREEN 验证、开源门禁、部署迭代。做新 skill 前必读。
 - 2026-11-10：git-auto-sync 第二轮优化，测试从 17 个增至 40 个，分六个独立提交：超时环境变量、认证误判收窄、porcelain -z 路径解析、暂存 diff 内容密钥扫描、push 错误分类且保留本地提交、回环代理端口探测。
 - 2026-11-10：测试夹具结论：本地文件协议远程忽略 http.proxy，dumb HTTP 假服务器无法复刻真实 GitHub 的 401 文本。错误分类正确性靠纯函数测试，集成测试只锁“push 失败必须保留本地提交”。真实 GitHub 行为见 `skills/git-auto-sync/docs/e2e-手动清单.md`。
+- 2026-11-10：集成测试用独立子进程跑 `sync.py`（`self.sync` 走 `subprocess`），测试进程里的 monkeypatch 传不进去，所以不能在 `SyncTests` 里 mock `detect_open_proxy_ports`。涉及机器环境（如本机代理端口是否在监听）的断言要收窄成各分支公共子串，具体分支文案交给同进程的 `ProxyPortProbeTests` 用 mock 确定性覆盖，否则在有代理的机器上会 flaky。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
