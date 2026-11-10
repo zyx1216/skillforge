@@ -73,6 +73,9 @@ def build_policy(env):
 
 
 def decide_network_action(env):
+    if env.get("GIT_SYNC_NETWORK_STATE") != "1":
+        return {"outcome": "direct", "proxy_url": None, "should_save": False,
+                "diagnostics": {}, "reasons": []}
     policy = build_policy(env)
     decision = connection.plan_connection(policy)
     result = {

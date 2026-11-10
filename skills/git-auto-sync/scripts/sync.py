@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path, PurePath
 
+import network_adapter
+
 
 SENSITIVE_NAMES = {
     ".env", ".netrc", "credentials.json", "secrets.yml", "secrets.yaml",
@@ -77,6 +79,37 @@ def run_git(args, check=True):
     if check and result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
     return result
+
+
+NETWORK_EXIT_CODE = 7
+
+
+def evaluate_network():
+    """提交前跑连接状态机，返回需要停下的报告；直连或可用代理返回 None。"""
+    decision = network_adapter.decide_network_action(os.environ)
+    outcome = decision["outcome"]
+    if outcome == "direct":
+        return None
+    if outcome in ("use_provided_proxy", "use_saved_proxy"):
+        return decision
+    if outcome == "direct_unavailable":
+        return report(
+            "direct_unavailable", NETWORK_EXIT_CODE,
+            error="两轮直连重试均失败，当前窗口直连 GitHub 不可用",
+            diagnostics=decision["diagnostics"], reasons=decision["reasons"],
+        )
+    return report(
+        "network_choice_required", NETWORK_EXIT_CODE,
+        error="直连 GitHub 连续失败，需要用户决定继续直连还是提供代理",
+        diagnostics=decision["diagnostics"], reasons=decision["reasons"],
+    )
+
+
+def proxy_git_args(proxy_url):
+    """把一次性代理用 -c 注入，不改全局 gitconfig。"""
+    if not proxy_url:
+        return []
+    return ["-c", f"http.proxy={proxy_url}", "-c", f"https.proxy={proxy_url}"]
 
 
 def sanitize(text):
@@ -151,8 +184,9 @@ def resolve_push_target():
     return None
 
 
-def preflight_remote(remote_name, remote_branch):
-    probe = run_git(["ls-remote", "--heads", remote_name, remote_branch], check=False)
+def preflight_remote(remote_name, remote_branch, proxy_args=None):
+    proxy_args = proxy_args or []
+    probe = run_git([*proxy_args, "ls-remote", "--heads", remote_name, remote_branch], check=False)
     if probe.returncode == 0:
         return None
     error = sanitize(probe.stderr.strip())
@@ -270,19 +304,28 @@ def main():
             commit = run_git(["rev-parse", "HEAD"]).stdout.strip()
             return report("missing_upstream", 2, commit=commit, error="没有可安全确定的当前分支 upstream")
         remote_name, remote_branch, branch, upstream_name, first_push = target
-        blocked = preflight_remote(remote_name, remote_branch)
+        decision = evaluate_network()
+        if isinstance(decision, int):
+            return decision
+        proxy_url = decision["proxy_url"] if decision else None
+        proxy_args = proxy_git_args(proxy_url)
+        blocked = preflight_remote(remote_name, remote_branch, proxy_args=proxy_args)
         if blocked is not None:
             return blocked
         run_git(["commit", "-m", args.message])
         commit = run_git(["rev-parse", "HEAD"]).stdout.strip()
         if first_push:
             push = run_git([
+                *proxy_args,
                 "push", "-u", "origin", f"refs/heads/{branch}:refs/heads/{branch}",
             ], check=False)
             if push.returncode != 0:
                 return classify_push_failure(push.stderr.strip() or push.stdout.strip())
             return report("pushed", 0, commit=commit, upstream=f"origin/{branch}")
-        push = run_git(["push", remote_name, f"refs/heads/{branch}:refs/heads/{remote_branch}"], check=False)
+        push = run_git([
+            *proxy_args, "push", remote_name,
+            f"refs/heads/{branch}:refs/heads/{remote_branch}",
+        ], check=False)
         if push.returncode != 0:
             return classify_push_failure(push.stderr.strip() or push.stdout.strip())
         return report("pushed", 0, commit=commit, upstream=upstream_name)

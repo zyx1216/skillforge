@@ -20,6 +20,7 @@ class DecideNetworkActionTests(unittest.TestCase):
         env = {
             "GIT_SYNC_TEST_DIRECT": "success",
             "GIT_SYNC_STATE_HOME": self.temp.name,
+            "GIT_SYNC_NETWORK_STATE": "1",
         }
         env.update(overrides)
         return env
