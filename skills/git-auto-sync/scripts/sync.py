@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 from pathlib import Path, PurePath
@@ -38,6 +39,7 @@ SETUP_GUIDANCE = (
 )
 
 DEFAULT_TIMEOUT = 30
+DEFAULT_PROXY_PORTS = (7890, 7897, 10808, 10809, 20890, 20891, 8080, 1080)
 
 
 def resolve_timeout(env):
@@ -47,6 +49,17 @@ def resolve_timeout(env):
     except ValueError:
         return DEFAULT_TIMEOUT
     return value if value > 0 else DEFAULT_TIMEOUT
+
+
+def detect_open_proxy_ports(candidates=DEFAULT_PROXY_PORTS, timeout=0.3):
+    """只探测本机回环地址，返回当前在监听的候选端口，不做任何外网连接。"""
+    listening = []
+    for port in candidates:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            if sock.connect_ex(("127.0.0.1", int(port))) == 0:
+                listening.append(int(port))
+    return listening
 
 
 def report(status, exit_code, **details):
@@ -148,12 +161,7 @@ def preflight_remote(remote_name, remote_branch):
     if kind == "authentication_required":
         return report("authentication_required", 6, error=error, setup=SETUP_GUIDANCE)
     if kind == "proxy_error":
-        setup = (
-            f"当前 Git HTTP 代理为 {configured_proxy}，连接失败。请先启动代理软件并核对端口；"
-            "如果你知道当前网络可以直连 GitHub，可在项目目录的 PowerShell 中仅本次绕过代理："
-            "git -c http.proxy= -c https.proxy= push。"
-            "该命令不修改全局配置。Codex 不会自动绕过或修改你的代理。"
-        )
+        setup = build_proxy_guidance(configured_proxy)
         return report("proxy_error", 2, error=error, proxy=configured_proxy, setup=setup)
     return report("remote_unavailable", 2, error=error or "无法访问远程仓库")
 
@@ -170,16 +178,36 @@ def classify_push_failure(error):
             error=clean_error, setup=SETUP_GUIDANCE,
         )
     if kind == "proxy_error":
-        setup = (
-            f"当前 Git HTTP 代理为 {configured_proxy}，推送时连接失败。请先启动代理软件并核对端口；"
-            "确认当前网络可直连 GitHub 时，可在项目目录的 PowerShell 中仅本次绕过代理："
-            "git -c http.proxy= -c https.proxy= push。该命令不修改全局配置。"
-        )
+        setup = build_proxy_guidance(configured_proxy)
         return report(
             "proxy_error", 2, commit=commit,
             error=clean_error, proxy=configured_proxy, setup=setup,
         )
     return report("push_failed", 4, commit=commit, error=clean_error)
+
+
+def build_proxy_guidance(configured_proxy):
+    listening = detect_open_proxy_ports()
+    configured_port = re.search(r":(\d+)", configured_proxy or "")
+    configured_port = int(configured_port.group(1)) if configured_port else None
+    alternatives = [port for port in listening if port != configured_port]
+    base = (
+        f"当前 Git HTTP 代理为 {configured_proxy}，连接失败。请先启动代理软件并核对端口。"
+        "Codex 不会自动绕过或修改你的代理。"
+    )
+    if alternatives:
+        port = alternatives[0]
+        base += (
+            f"检测到本机回环端口 {port} 正在监听，若它是你的代理端口，可仅本次指定它推送："
+            f"git -c http.proxy=http://127.0.0.1:{port} "
+            f"-c https.proxy=http://127.0.0.1:{port} push。"
+        )
+    else:
+        base += (
+            "没有探测到常见代理端口在监听。确认当前网络可直连 GitHub 时，"
+            "可仅本次绕过代理：git -c http.proxy= -c https.proxy= push。"
+        )
+    return base
 
 
 def parse_args():

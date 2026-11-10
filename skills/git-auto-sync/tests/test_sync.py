@@ -411,5 +411,50 @@ class ContentSecretTests(unittest.TestCase):
                 self.assertEqual(sync.find_secret_lines(f"@@\n{line}\n"), [])
 
 
+class ProxyPortProbeTests(unittest.TestCase):
+    def test_reports_only_listening_loopback_ports(self):
+        server = http.server.HTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        port = server.server_port
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            open_ports = sync.detect_open_proxy_ports([port, 1], timeout=1)
+        finally:
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertIn(port, open_ports)
+        self.assertNotIn(1, open_ports)
+
+    def test_default_candidate_list_covers_common_ports(self):
+        self.assertIn(20890, sync.DEFAULT_PROXY_PORTS)
+        self.assertIn(20891, sync.DEFAULT_PROXY_PORTS)
+        self.assertIn(7890, sync.DEFAULT_PROXY_PORTS)
+
+    def test_guidance_suggests_listening_alternative_port(self):
+        server = http.server.HTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        port = server.server_port
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        original = sync.detect_open_proxy_ports
+        sync.detect_open_proxy_ports = lambda *args, **kwargs: [port]
+        try:
+            guidance = sync.build_proxy_guidance("http://127.0.0.1:20890")
+        finally:
+            sync.detect_open_proxy_ports = original
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertIn(f"127.0.0.1:{port}", guidance)
+        self.assertIn("git -c http.proxy=", guidance)
+
+    def test_guidance_without_open_port_offers_direct_bypass(self):
+        original = sync.detect_open_proxy_ports
+        sync.detect_open_proxy_ports = lambda *args, **kwargs: []
+        try:
+            guidance = sync.build_proxy_guidance("http://127.0.0.1:20890")
+        finally:
+            sync.detect_open_proxy_ports = original
+        self.assertIn("git -c http.proxy= -c https.proxy= push", guidance)
+
+
 if __name__ == "__main__":
     unittest.main()
