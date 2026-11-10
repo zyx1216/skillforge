@@ -195,7 +195,9 @@ class SyncTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertEqual(report["status"], "proxy_error")
         self.assertIn("127.0.0.1:1", report["setup"])
-        self.assertIn("git -c http.proxy= -c https.proxy= push", report["setup"])
+        # 执行器是独立子进程，这里无法 mock 端口探测；运行机器若有代理在监听会走替代端口分支。
+        # 两个分支的文案都含推送命令前缀，具体分支由 ProxyPortProbeTests 的 mock 单测确定性覆盖。
+        self.assertIn("git -c http.proxy=", report["setup"])
 
     def test_common_private_key_names_are_blocked(self):
         for name in ("id_rsa", "id_ed25519", ".netrc"):
