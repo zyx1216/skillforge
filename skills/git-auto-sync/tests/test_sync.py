@@ -235,5 +235,47 @@ class TimeoutConfigTests(unittest.TestCase):
                 self.assertEqual(sync.resolve_timeout({"GIT_SYNC_TIMEOUT": bad}), 30)
 
 
+class ErrorClassificationTests(unittest.TestCase):
+    def test_remote_missing_is_not_authentication(self):
+        samples = [
+            "fatal: repository 'https://github.com/zyx1216/missing.git/' not found",
+            "fatal: remote error: Repository not found.",
+            "ERROR: Repository not found",
+        ]
+        for text in samples:
+            with self.subTest(text=text):
+                self.assertEqual(sync.classify_remote_error(text), "remote_unavailable")
+
+    def test_authentication_failures_are_detected(self):
+        samples = [
+            "fatal: Authentication failed for 'https://github.com/o/r.git/'",
+            "remote: Permission to zyx1216/r.git denied to other-user.",
+            "git@github.com: Permission denied (publickey).",
+            "fatal: unable to access: The requested URL returned error: 403",
+        ]
+        for text in samples:
+            with self.subTest(text=text):
+                self.assertEqual(sync.classify_remote_error(text), "authentication_required")
+
+    def test_proxy_failures_are_detected(self):
+        text = "fatal: unable to access: Failed to connect over proxy 127.0.0.1 port 1"
+        self.assertEqual(
+            sync.classify_remote_error(text, configured_proxy="http://127.0.0.1:1"),
+            "proxy_error",
+        )
+
+    def test_direct_failure_without_proxy_is_remote_unavailable(self):
+        text = "fatal: unable to access 'https://github.com/o/r.git/': Failed to connect to github.com:443: Could not connect to server"
+        self.assertEqual(sync.classify_remote_error(text, configured_proxy=""), "remote_unavailable")
+        proxy_text = "fatal: unable to access: Failed to connect to github.com:443 over proxy 127.0.0.1: Could not connect to server"
+        self.assertEqual(
+            sync.classify_remote_error(proxy_text, configured_proxy="http://127.0.0.1:20890"),
+            "proxy_error",
+        )
+
+    def test_unknown_error_falls_back_to_remote_unavailable(self):
+        self.assertEqual(sync.classify_remote_error("some strange git failure"), "remote_unavailable")
+
+
 if __name__ == "__main__":
     unittest.main()

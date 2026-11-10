@@ -19,9 +19,10 @@ ASSIGNED_SECRET = re.compile(
 )
 AUTH_ERROR = re.compile(
     r"authentication|permission denied|access denied|could not read|"
-    r"invalid username|repository not found|not found|403|401",
+    r"invalid username|403|401|denied",
     re.IGNORECASE,
 )
+REPO_MISSING = re.compile(r"repository .*not found|remote error: repository not found", re.IGNORECASE)
 PROXY_ERROR = re.compile(r"proxy|Failed to connect", re.IGNORECASE)
 SETUP_GUIDANCE = (
     "GitHub 凭据未配置、已失效或当前账号无权访问远程。请打开 Windows PowerShell"
@@ -66,6 +67,17 @@ def sanitize(text):
     return ASSIGNED_SECRET.sub(r"\1\2<已隐藏>", text)
 
 
+def classify_remote_error(error, configured_proxy=""):
+    """只做错误归类，不执行任何 Git 写操作，预检和 push 失败共用。"""
+    if REPO_MISSING.search(error):
+        return "remote_unavailable"
+    if AUTH_ERROR.search(error):
+        return "authentication_required"
+    if configured_proxy and re.search(r"proxy", error, re.IGNORECASE):
+        return "proxy_error"
+    return "remote_unavailable"
+
+
 def is_sensitive(path):
     name = PurePath(path).name.lower()
     if name in SENSITIVE_NAMES or name.startswith(".env."):
@@ -94,10 +106,11 @@ def preflight_remote(remote_name, remote_branch):
     if probe.returncode == 0:
         return None
     error = sanitize(probe.stderr.strip())
-    if AUTH_ERROR.search(error):
-        return report("authentication_required", 6, error=error, setup=SETUP_GUIDANCE)
     configured_proxy = run_git(["config", "--get", "http.proxy"], check=False).stdout.strip()
-    if configured_proxy and PROXY_ERROR.search(error):
+    kind = classify_remote_error(error, configured_proxy=configured_proxy)
+    if kind == "authentication_required":
+        return report("authentication_required", 6, error=error, setup=SETUP_GUIDANCE)
+    if kind == "proxy_error":
         setup = (
             f"当前 Git HTTP 代理为 {configured_proxy}，连接失败。请先启动代理软件并核对端口；"
             "如果你知道当前网络可以直连 GitHub，可在项目目录的 PowerShell 中仅本次绕过代理："
