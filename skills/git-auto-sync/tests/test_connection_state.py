@@ -140,6 +140,34 @@ class StateMachineTests(unittest.TestCase):
         self.assertEqual(decision.outcome, connection.DIRECT_UNAVAILABLE)
         self.assertEqual(policy.direct_attempts, 6)
 
+    def test_default_sleep_uses_random_delay_in_expected_range(self):
+        delays = []
+        policy = connection.ConnectionPolicy(
+            direct_probe=lambda: connection.DirectPorts(False, False),
+            sleep=delays.append,
+        )
+        policy.run_direct_round()
+        self.assertEqual(len(delays), 2)
+        self.assertTrue(all(1 <= delay <= 2 for delay in delays))
+
+    def test_default_policy_sleep_is_callable_without_injection(self):
+        policy = connection.ConnectionPolicy(
+            direct_probe=lambda: connection.DirectPorts(True, True),
+        )
+        self.assertTrue(callable(policy.sleep))
+
+    def test_random_delay_can_exceed_one_second(self):
+        delays = []
+        policy = connection.ConnectionPolicy(
+            direct_probe=lambda: connection.DirectPorts(False, False),
+            sleep=delays.append,
+            attempts=2,
+        )
+        for _ in range(20):
+            policy.run_direct_round()
+        self.assertTrue(any(delay > 1 for delay in delays))
+        self.assertTrue(all(1 <= delay <= 2 for delay in delays))
+
     def test_retry_direct_succeeds_in_second_round(self):
         policy = self.make_policy(
             direct_results=[False, False, False, True],

@@ -6,7 +6,15 @@
 """
 from urllib.parse import urlparse
 
-from network import DIRECT_ATTEMPTS, http_connect_tunnel
+import random
+import time
+
+from network import (
+    DIRECT_ATTEMPTS,
+    RETRY_DELAY_MAX,
+    RETRY_DELAY_MIN,
+    http_connect_tunnel,
+)
 
 
 DIRECT = "direct"
@@ -47,7 +55,7 @@ class ConnectionPolicy:
         self.remember = remember
         self.provided_proxy = (provided_proxy or "").strip() or None
         self.retry_direct = retry_direct
-        self.sleep = sleep or (lambda _: None)
+        self.sleep = sleep if sleep is not None else time.sleep
         self.attempts = attempts
         self.direct_attempts = 0
         self.last_direct_ports = DirectPorts(False, False)
@@ -69,7 +77,9 @@ class ConnectionPolicy:
             if reachable:
                 return True
             if index < self.attempts - 1:
-                self.sleep(1)
+                delay = random.uniform(RETRY_DELAY_MIN, RETRY_DELAY_MAX)
+                if self.sleep is not None:
+                    self.sleep(delay)
         return False
 
     def proxy_alive(self, proxy_url):

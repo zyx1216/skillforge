@@ -30,6 +30,12 @@ def _test_system_proxy(env):
     return None
 
 
+def _test_sleep(env):
+    if "GIT_SYNC_TEST_DIRECT" in env:
+        return lambda _: None
+    return None
+
+
 def _git_proxy_config(env):
     test_value = env.get("GIT_SYNC_TEST_GIT_PROXY")
     if test_value is not None:
@@ -99,7 +105,7 @@ def build_policy(env):
         remember=env.get("GIT_SYNC_REMEMBER_PROXY") == "1",
         provided_proxy=env.get("GIT_SYNC_PROXY"),
         retry_direct=env.get("GIT_SYNC_RETRY_DIRECT") == "1",
-        sleep=lambda _: None,
+        sleep=_test_sleep(env),
         git_proxy=_git_proxy_config(env),
         env_proxy=network.read_env_proxies(env),
         proxy_tunnel_probe=proxy_tunnel_probe,
