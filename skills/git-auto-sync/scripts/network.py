@@ -83,12 +83,27 @@ def wait_for_direct(attempts=DIRECT_ATTEMPTS, timeout=DIRECT_TIMEOUT, probe=None
     间隔在 1 到 2 秒间随机，最后一轮失败后不再 sleep。
     """
     sleep = sleep or __import__("time").sleep
+
+    def check(_timeout):
+        port_443 = tcp_reachable(GITHUB_HOST, 443, timeout=timeout, probe=probe)
+        port_22 = tcp_reachable(GITHUB_HOST, 22, timeout=timeout, probe=probe)
+        return DirectCheckResult(port_443, port_22)
+
+    ok, _ = run_direct_round(attempts=attempts, check=check, sleep=sleep)
+    return ok
+
+
+def run_direct_round(attempts=DIRECT_ATTEMPTS, check=None, sleep=None):
+    """一轮直连重试，check 返回双端口结果。443 通即成功，全败保留最后一次双端口状态。"""
+    sleep = sleep or __import__("time").sleep
+    last = DirectCheckResult(False, False)
     for index in range(attempts):
-        if tcp_reachable(GITHUB_HOST, 443, timeout=timeout, probe=probe):
-            return True
+        last = check(DIRECT_TIMEOUT)
+        if last.port_443:
+            return True, last
         if index < attempts - 1:
             sleep(random.uniform(RETRY_DELAY_MIN, RETRY_DELAY_MAX))
-    return False
+    return False, last
 
 
 def read_windows_proxy_registry():

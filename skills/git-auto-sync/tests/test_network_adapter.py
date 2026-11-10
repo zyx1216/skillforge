@@ -125,6 +125,15 @@ class DecideNetworkActionTests(unittest.TestCase):
             "socks5h://127.0.0.1:7894",
         )
 
+    def test_443_blocked_22_open_suggests_ssh(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="443_blocked_22_open",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertFalse(result["diagnostics"]["direct_ports"]["port_443"])
+        self.assertTrue(result["diagnostics"]["direct_ports"]["port_22"])
+        self.assertIn("ssh_available", result["reasons"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,14 @@ NEED_CHOICE = "need_choice"
 DIRECT_UNAVAILABLE = "direct_unavailable"
 
 
+class DirectPorts:
+    """一轮直连探测的 443 和 22 端口状态。"""
+
+    def __init__(self, port_443, port_22):
+        self.port_443 = port_443
+        self.port_22 = port_22
+
+
 class SystemProxyInfo:
     def __init__(self, host, port, listening, residual):
         self.host = host
@@ -41,6 +49,7 @@ class ConnectionPolicy:
         self.sleep = sleep or (lambda _: None)
         self.attempts = attempts
         self.direct_attempts = 0
+        self.last_direct_ports = DirectPorts(False, False)
         self.git_proxy = git_proxy
         self.env_proxy = env_proxy
 
@@ -48,7 +57,14 @@ class ConnectionPolicy:
         """一轮直连重试，最多 attempts 次，任一成功即 True。"""
         for index in range(self.attempts):
             self.direct_attempts += 1
-            if self.direct_probe():
+            result = self.direct_probe()
+            if isinstance(result, DirectPorts):
+                self.last_direct_ports = result
+                reachable = result.port_443
+            else:
+                reachable = bool(result)
+                self.last_direct_ports = DirectPorts(reachable, reachable)
+            if reachable:
                 return True
             if index < self.attempts - 1:
                 self.sleep(1)
@@ -76,7 +92,13 @@ class ConnectionDecision:
 
 
 def build_diagnostics(policy):
-    diagnostics = {"direct_attempts": policy.direct_attempts}
+    diagnostics = {
+        "direct_attempts": policy.direct_attempts,
+        "direct_ports": {
+            "port_443": policy.last_direct_ports.port_443,
+            "port_22": policy.last_direct_ports.port_22,
+        },
+    }
     if policy.git_proxy:
         diagnostics["git_proxy"] = policy.git_proxy
     if policy.env_proxy:
@@ -104,7 +126,7 @@ def plan_connection(policy):
         return ConnectionDecision(
             DIRECT_UNAVAILABLE,
             diagnostics=build_diagnostics(policy),
-            reasons=["second_round_failed"],
+            reasons=_direct_failure_reasons(policy, ["second_round_failed"]),
         )
 
     if policy.provided_proxy:
@@ -114,7 +136,7 @@ def plan_connection(policy):
             should_save=policy.remember,
         )
 
-    reasons = ["direct_round_failed"]
+    reasons = _direct_failure_reasons(policy, ["direct_round_failed"])
     if policy.saved_proxy:
         if policy.proxy_alive(policy.saved_proxy):
             return ConnectionDecision(
@@ -133,3 +155,10 @@ def plan_connection(policy):
         diagnostics=build_diagnostics(policy),
         reasons=reasons,
     )
+
+
+def _direct_failure_reasons(policy, reasons):
+    ports = policy.last_direct_ports
+    if not ports.port_443 and ports.port_22:
+        reasons.append("ssh_available")
+    return reasons

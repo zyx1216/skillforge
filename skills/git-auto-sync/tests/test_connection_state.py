@@ -14,13 +14,14 @@ class StateMachineTests(unittest.TestCase):
         saved_proxy=None, system_proxy=None, remember=False,
         retry_direct=False, provided_proxy=None,
         git_proxy=None, env_proxy=None,
+        direct_checks=None,
     ):
-        direct = list(direct_results or [])
-
-        def direct_probe():
-            if not direct:
-                return False
-            return direct.pop(0)
+        if direct_checks is not None:
+            checks = list(direct_checks)
+            direct_probe = lambda: checks.pop(0)
+        else:
+            direct = list(direct_results or [])
+            direct_probe = lambda: direct.pop(0) if direct else False
 
         return connection.ConnectionPolicy(
             direct_probe=direct_probe,
@@ -61,6 +62,20 @@ class StateMachineTests(unittest.TestCase):
             decision.diagnostics["env_proxy"]["https_proxy"],
             "socks5h://127.0.0.1:7894",
         )
+
+    def test_direct_probe_reports_both_ports_in_diagnostics(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False],
+            direct_checks=[
+                connection.DirectPorts(False, True),
+                connection.DirectPorts(False, True),
+                connection.DirectPorts(False, True),
+            ],
+        )
+        decision = connection.plan_connection(policy)
+        self.assertFalse(decision.diagnostics["direct_ports"]["port_443"])
+        self.assertTrue(decision.diagnostics["direct_ports"]["port_22"])
+        self.assertIn("ssh_available", decision.reasons)
 
     def test_three_failures_auto_falls_back_to_saved_proxy(self):
         policy = self.make_policy(

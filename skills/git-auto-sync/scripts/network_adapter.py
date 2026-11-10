@@ -13,9 +13,11 @@ def _test_direct_probe(env):
     if mode is None:
         return None
     if mode == "success":
-        return lambda: True
+        return lambda: connection.DirectPorts(True, True)
     if mode == "fail":
-        return lambda: False
+        return lambda: connection.DirectPorts(False, False)
+    if mode == "443_blocked_22_open":
+        return lambda: connection.DirectPorts(False, True)
     return None
 
 
@@ -55,7 +57,7 @@ def build_policy(env):
         direct_probe = test_probe
     else:
         def direct_probe():
-            return network.tcp_reachable(network.GITHUB_HOST, 443, timeout=network.DIRECT_TIMEOUT)
+            return network.check_github_direct()
 
     test_alive = env.get("GIT_SYNC_TEST_PROXY_ALIVE")
     if test_alive is not None:

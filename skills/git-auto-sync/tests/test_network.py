@@ -56,7 +56,7 @@ class DirectRetryTests(unittest.TestCase):
             probe=fake_probe, sleep=lambda _: None,
         )
         self.assertTrue(result)
-        self.assertEqual(attempts, [443])
+        self.assertEqual(attempts, [443, 22])
 
     def test_three_failures_return_false_and_measure_delays(self):
         delays = []
@@ -73,18 +73,53 @@ class DirectRetryTests(unittest.TestCase):
         self.assertTrue(all(1 <= delay <= 2 for delay in delays))
 
     def test_success_on_third_attempt(self):
-        state = {"count": 0}
+        rounds = {
+            "count": 0,
+            "results": [
+                network.DirectCheckResult(False, False),
+                network.DirectCheckResult(False, True),
+                network.DirectCheckResult(True, True),
+            ],
+        }
 
-        def fake_probe(host, port, timeout):
-            state["count"] += 1
-            return state["count"] == 3
+        def check(timeout):
+            result = rounds["results"][rounds["count"]]
+            rounds["count"] += 1
+            return result
 
-        result = network.wait_for_direct(
-            attempts=3, timeout=6,
-            probe=fake_probe, sleep=lambda _: None,
-        )
+        ok, last = network.run_direct_round(check=check, sleep=lambda _: None)
+        result = ok
         self.assertTrue(result)
-        self.assertEqual(state["count"], 3)
+        self.assertEqual(rounds["count"], 3)
+        self.assertTrue(last.port_443)
+
+    def test_direct_round_keeps_last_dual_port_result(self):
+        results = [
+            network.DirectCheckResult(False, False),
+            network.DirectCheckResult(False, True),
+            network.DirectCheckResult(False, True),
+        ]
+
+        def check(timeout):
+            return results.pop(0)
+
+        ok, last = network.run_direct_round(check=check, sleep=lambda _: None)
+        self.assertFalse(ok)
+        self.assertFalse(last.port_443)
+        self.assertTrue(last.port_22)
+
+    def test_direct_round_succeeds_on_443_only(self):
+        results = [
+            network.DirectCheckResult(False, True),
+            network.DirectCheckResult(True, True),
+        ]
+
+        def check(timeout):
+            return results.pop(0)
+
+        ok, last = network.run_direct_round(check=check, sleep=lambda _: None)
+        self.assertTrue(ok)
+        self.assertTrue(last.port_443)
 
 
 class SystemProxyTests(unittest.TestCase):
