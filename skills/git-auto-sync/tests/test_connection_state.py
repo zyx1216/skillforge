@@ -13,6 +13,7 @@ class StateMachineTests(unittest.TestCase):
         self, direct_results=None, proxy_port_probe=None,
         saved_proxy=None, system_proxy=None, remember=False,
         retry_direct=False, provided_proxy=None,
+        git_proxy=None, env_proxy=None,
     ):
         direct = list(direct_results or [])
 
@@ -30,6 +31,8 @@ class StateMachineTests(unittest.TestCase):
             provided_proxy=provided_proxy,
             retry_direct=retry_direct,
             sleep=lambda _: None,
+            git_proxy=git_proxy,
+            env_proxy=env_proxy,
         )
 
     def test_direct_success_returns_direct_without_diagnostics(self):
@@ -42,6 +45,22 @@ class StateMachineTests(unittest.TestCase):
         decision = connection.plan_connection(policy)
         self.assertEqual(decision.outcome, connection.NEED_CHOICE)
         self.assertTrue(decision.diagnostics)
+
+    def test_diagnostics_include_git_and_env_proxy(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False],
+            git_proxy={"http_proxy": "http://127.0.0.1:20890", "https_proxy": "http://127.0.0.1:20890"},
+            env_proxy={"http_proxy": None, "https_proxy": "socks5h://127.0.0.1:7894", "all_proxy": None},
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(
+            decision.diagnostics["git_proxy"],
+            {"http_proxy": "http://127.0.0.1:20890", "https_proxy": "http://127.0.0.1:20890"},
+        )
+        self.assertEqual(
+            decision.diagnostics["env_proxy"]["https_proxy"],
+            "socks5h://127.0.0.1:7894",
+        )
 
     def test_three_failures_auto_falls_back_to_saved_proxy(self):
         policy = self.make_policy(

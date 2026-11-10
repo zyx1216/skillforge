@@ -29,6 +29,7 @@ class ConnectionPolicy:
         self, direct_probe, proxy_port_probe=None, saved_proxy=None,
         system_proxy=None, remember=False, provided_proxy=None,
         retry_direct=False, sleep=None, attempts=DIRECT_ATTEMPTS,
+        git_proxy=None, env_proxy=None,
     ):
         self.direct_probe = direct_probe
         self.proxy_port_probe = proxy_port_probe or (lambda url: True)
@@ -40,6 +41,8 @@ class ConnectionPolicy:
         self.sleep = sleep or (lambda _: None)
         self.attempts = attempts
         self.direct_attempts = 0
+        self.git_proxy = git_proxy
+        self.env_proxy = env_proxy
 
     def run_direct_round(self):
         """一轮直连重试，最多 attempts 次，任一成功即 True。"""
@@ -74,6 +77,10 @@ class ConnectionDecision:
 
 def build_diagnostics(policy):
     diagnostics = {"direct_attempts": policy.direct_attempts}
+    if policy.git_proxy:
+        diagnostics["git_proxy"] = policy.git_proxy
+    if policy.env_proxy:
+        diagnostics["env_proxy"] = policy.env_proxy
     if policy.saved_proxy:
         diagnostics["saved_proxy"] = policy.saved_proxy
         diagnostics["saved_proxy_alive"] = policy.proxy_alive(policy.saved_proxy)

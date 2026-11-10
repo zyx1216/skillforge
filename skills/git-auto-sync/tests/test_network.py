@@ -145,5 +145,24 @@ class SystemProxyTests(unittest.TestCase):
         self.assertIsNone(status)
 
 
+class EnvProxyTests(unittest.TestCase):
+    def test_reads_uppercase_and_lowercase_proxy_vars(self):
+        env = {
+            "HTTP_PROXY": "http://127.0.0.1:7890",
+            "https_proxy": "socks5h://127.0.0.1:7894",
+            "ALL_PROXY": "socks5://127.0.0.1:7895",
+        }
+        result = network.read_env_proxies(env)
+        self.assertEqual(result["http_proxy"], "http://127.0.0.1:7890")
+        self.assertEqual(result["https_proxy"], "socks5h://127.0.0.1:7894")
+        self.assertEqual(result["all_proxy"], "socks5://127.0.0.1:7895")
+
+    def test_missing_vars_are_none_not_empty_string(self):
+        result = network.read_env_proxies({})
+        self.assertIsNone(result["http_proxy"])
+        self.assertIsNone(result["https_proxy"])
+        self.assertIsNone(result["all_proxy"])
+
+
 if __name__ == "__main__":
     unittest.main()

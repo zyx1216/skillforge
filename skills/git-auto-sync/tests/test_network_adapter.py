@@ -109,6 +109,22 @@ class DecideNetworkActionTests(unittest.TestCase):
         result = network_adapter.decide_network_action(env)
         self.assertEqual(result["outcome"], "direct")
 
+    def test_diagnostics_carry_git_and_env_proxy(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_TEST_GIT_PROXY="http://127.0.0.1:20890",
+            HTTPS_PROXY="socks5h://127.0.0.1:7894",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(
+            result["diagnostics"]["git_proxy"]["http_proxy"],
+            "http://127.0.0.1:20890",
+        )
+        self.assertEqual(
+            result["diagnostics"]["env_proxy"]["https_proxy"],
+            "socks5h://127.0.0.1:7894",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

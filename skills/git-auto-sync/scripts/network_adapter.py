@@ -28,6 +28,27 @@ def _test_system_proxy(env):
     return None
 
 
+def _git_proxy_config(env):
+    test_value = env.get("GIT_SYNC_TEST_GIT_PROXY")
+    if test_value is not None:
+        return {"http_proxy": test_value or None, "https_proxy": test_value or None}
+    import subprocess
+
+    def read(key):
+        result = subprocess.run(
+            ["git", "config", "--get", key],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        value = result.stdout.strip()
+        return value or None
+
+    config = {
+        "http_proxy": read("http.proxy"),
+        "https_proxy": read("https.proxy"),
+    }
+    return config if any(config.values()) else None
+
+
 def build_policy(env):
     test_probe = _test_direct_probe(env)
     if test_probe is not None:
@@ -69,6 +90,8 @@ def build_policy(env):
         provided_proxy=env.get("GIT_SYNC_PROXY"),
         retry_direct=env.get("GIT_SYNC_RETRY_DIRECT") == "1",
         sleep=lambda _: None,
+        git_proxy=_git_proxy_config(env),
+        env_proxy=network.read_env_proxies(env),
     )
 
 

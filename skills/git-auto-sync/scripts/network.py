@@ -64,6 +64,19 @@ def check_github_direct(timeout=DIRECT_TIMEOUT, probe=None):
     return DirectCheckResult(port_443, port_22)
 
 
+def read_env_proxies(env):
+    """只读环境变量里的代理，大小写都兼容，缺失返回 None 而不是空串。"""
+    def pick(lower, upper):
+        value = env.get(lower) or env.get(upper)
+        return value.strip() if value and value.strip() else None
+
+    return {
+        "http_proxy": pick("http_proxy", "HTTP_PROXY"),
+        "https_proxy": pick("https_proxy", "HTTPS_PROXY"),
+        "all_proxy": pick("all_proxy", "ALL_PROXY"),
+    }
+
+
 def wait_for_direct(attempts=DIRECT_ATTEMPTS, timeout=DIRECT_TIMEOUT, probe=None, sleep=None):
     """直连重试，任一轮 443 可达即成功；全败返回 False。
 
