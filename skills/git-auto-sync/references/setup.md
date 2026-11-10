@@ -40,6 +40,44 @@ SSH 命令同样在 Windows PowerShell 中执行。
 
 连接状态机默认启用，不需要任何开关就会自动重试和诊断。只有确实想恢复旧行为、完全不做探测时，才在调用执行器时设置环境变量 `GIT_SYNC_NETWORK_STATE=0` 作为逃生舱；不设这个变量或设成其他值都保持启用。重试次数、超时和间隔都是脚本里的固定常量，不读外部配置。
 
+## 收到 network_choice_required 后怎么回答
+
+执行器返回 `network_choice_required`（退出码 7）时还没有产生提交，改动完整保留在工作区。它不会自己决定走哪条路，需要你通过环境变量表明选择，然后用原来的命令重新调用执行器。
+
+### 选项 A：再试一轮直连
+
+适合你判断只是临时抖动，或刚切换了网络。设置 `GIT_SYNC_RETRY_DIRECT=1` 后重跑，执行器会再做一轮 3 次直连；这一轮仍全败会返回 `direct_unavailable`，不会继续无限重试。
+
+```powershell
+$env:GIT_SYNC_RETRY_DIRECT = "1"
+python "<skill目录>/scripts/sync.py" --message "<中文提交说明>" --allow-dirty -- <路径>
+Remove-Item Env:GIT_SYNC_RETRY_DIRECT
+```
+
+### 选项 B：提供代理
+
+把代理地址放进 `GIT_SYNC_PROXY`，执行器会先验证端口存活，HTTP 代理还要能对 `github.com:443` 建立 CONNECT 隧道，验证通过才用一次性 `git -c http.proxy=...` 推送。
+
+```powershell
+$env:GIT_SYNC_PROXY = "http://127.0.0.1:20891"
+python "<skill目录>/scripts/sync.py" --message "<中文提交说明>" --allow-dirty -- <路径>
+Remove-Item Env:GIT_SYNC_PROXY
+```
+
+希望以后直连三败时自动用这个代理兜底，就同时设置 `GIT_SYNC_REMEMBER_PROXY=1`，地址会写入 `~/.git-auto-sync/proxy.json`。只在这一轮用就不要设记住开关。
+
+```powershell
+$env:GIT_SYNC_PROXY = "http://127.0.0.1:20891"
+$env:GIT_SYNC_REMEMBER_PROXY = "1"
+python "<skill目录>/scripts/sync.py" --message "<中文提交说明>" --allow-dirty -- <路径>
+Remove-Item Env:GIT_SYNC_PROXY
+Remove-Item Env:GIT_SYNC_REMEMBER_PROXY
+```
+
+### 风险提示和状态字段
+
+返回结果里的 `remote_risk` 为 `true` 时，说明代理地址不是本机回环（`127.0.0.1`、`localhost`、`::1`），Git 流量会经过别人的服务器，存在凭据泄露风险，应先确认来源可信再继续。诊断字段 `diagnostics` 里还会给出最后一轮 443 和 22 端口状态：443 阻断但 22 通时 `reasons` 带 `ssh_available`，可以考虑把远程切到 SSH；`system_proxy_residual` 表示系统代理残留，按本文的复位方法处理。
+
 ## 系统代理残留（任何代理软件都可能出现）
 
 代理软件开“系统代理模式”时，会把 Windows 的系统代理开关打开并指向自己的本地端口。如果软件异常退出、没正常关闭，这个开关可能残留为开，但指向的端口已经没有服务，结果连国内网站也打不开。这不是某一款软件的问题，任何改系统代理的工具异常退出都可能留下这个状态。

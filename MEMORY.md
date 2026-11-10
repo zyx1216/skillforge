@@ -16,6 +16,10 @@
 - 2026-11-10：状态机默认启用，`GIT_SYNC_NETWORK_STATE=0` 只作为显式关闭的逃生舱。最初实现成"设 1 才启用"，导致默认行为和“自动消化抖动”的目标脱节；改为默认启用后，所有测试夹具统一注入 `GIT_SYNC_TEST_DIRECT=success`，探测确定性成功、零真实联网，旧测试行为不变。
 - 2026-11-10：子进程测试的网络隔离方案是环境变量注入：`GIT_SYNC_TEST_DIRECT` 控制直连成败、`GIT_SYNC_TEST_PROXY_ALIVE` 控制代理端口探测、`GIT_SYNC_TEST_SYSTEM_PROXY` 模拟系统代理、`GIT_SYNC_STATE_HOME` 把状态文件指到临时目录。适配层见到测试变量就走 fake，线上不设这些变量才用真实 socket 和注册表。
 - 2026-11-10：系统代理残留判定看“开关是否开 + 指向端口有无服务”，端口无服务才叫残留，有服务但连不上归节点或规则问题。只检测不自动复位，复位方法写进 setup.md，不绑定具体代理软件品牌。
+- 2026-11-10：第四轮优化补齐六项缺口。诊断新增 git `http.proxy/https.proxy` 和环境变量 `HTTP(S)_PROXY/ALL_PROXY` 两个只读字段，能力全部参数注入；直连探测改为每轮同时探 443 和 22，443 阻断但 22 通时 reasons 给 `ssh_available`。
+- 2026-11-10：代理可用性分两层。先看端口存活，HTTP 代理再发 `CONNECT github.com:443`，2xx 才算隧道可用；SOCKS 第一版保守处理，只看端口不做握手。端口活但隧道失败返回 `proxy_node_failed`，在提交前拦回 `need_choice`，不再带坏代理走到 `push_failed`。
+- 2026-11-10：重试间隔统一成 `random.uniform(1,2)`，生产用真实 `time.sleep`，测试通过注入 no-op sleep 保持快速。决策结果新增 `remote_risk`，非回环代理在使用前暴露凭据风险。
+- 2026-11-10：`network_choice_required` 的回答方式固定为环境变量重跑：`GIT_SYNC_RETRY_DIRECT=1` 再试一轮，`GIT_SYNC_PROXY=<url>` 给代理，加 `GIT_SYNC_REMEMBER_PROXY=1` 同时记住。带 `GIT_SYNC_TEST_` 前缀的变量只用于测试注入，不写进用户文档。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
