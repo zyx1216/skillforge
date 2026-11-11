@@ -28,6 +28,9 @@
 - 2026-11-11：第六轮把“三败问答”从环境变量升级为命令行参数，测试从 127 个增至 138 个。新增 `--retry-direct`、`--proxy <url>`、`--remember-proxy` 三个 argparse 参数，经 `build_network_env` 合并进环境后再喂给状态机，`ConnectionPolicy` 和 `plan_connection` 一行不改，只换“输入从哪来”。
 - 2026-11-11：参数优先级固定为命令行参数高于旧环境变量高于默认。旧的三个用户态变量（`GIT_SYNC_RETRY_DIRECT`、`GIT_SYNC_PROXY`、`GIT_SYNC_REMEMBER_PROXY`）保留读取做兼容，文档主推参数，老调用不会失效。带 `GIT_SYNC_TEST_` 前缀的仍是纯测试注入，不进文档。
 - 2026-11-11：参数组合在任何 git 操作前校验。`--remember-proxy` 必须配 `--proxy`，`--retry-direct` 与 `--proxy` 互斥，违规直接返回 `invalid_arguments`（退出码 2），不产生提交。代理两道校验（端口存活加协议隧道）、`remote_risk`、带代理仍先首轮直连等安全语义全部沿用。
+- 2026-11-11：第七轮把系统代理检测从 Windows-only 扩展到三平台，测试从 138 个增至 152 个。新增统一入口 `read_system_proxy_raw` 按 `sys.platform` 分发：win32 走原注册表读取，darwin 用 `networksetup`（先 listallnetworkservices 再逐服务读 getwebproxy/getsecurewebproxy/getsocksfirewallproxy），linux 第一版只支持 GNOME 的 `gsettings manual` 模式。
+- 2026-11-11：三个平台读取器统一返回 `{"ProxyEnable", "ProxyServer"}`，之后完全复用既有 `parse_proxy_server`、端口探测和 residual 判定。`detect_system_proxy` 只换默认读取器，`SystemProxyStatus` 结构、network_adapter 无参调用和状态机全部不动，对上层透明。
+- 2026-11-11：跨平台测试全部靠 runner 注入假输出，Windows 开发机也能测 macOS/Linux。`networksetup`/`gsettings` 不存在时读取器返回 None 而不是抛错；Linux 的 KDE、无桌面、mode 非 manual 一律保守返回空。写这类测试的关键是假 runner 的命令元组要和生产参数数组逐元素对齐，gsettings 的 schema、scheme、key 是三个独立参数，不能拼成一个字符串。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
