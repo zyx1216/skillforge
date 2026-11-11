@@ -107,6 +107,91 @@ class SyncNetworkTests(unittest.TestCase):
         self.assertEqual(report["status"], "pushed")
         self.assertFalse(self.state_home.exists())
 
+    def test_retry_direct_flag_runs_second_round(self):
+        self.change_readme()
+        head_before = git(self.repo, "rev-parse", "HEAD")
+        result = self.sync(
+            "--retry-direct",
+            "--message", "docs: 参数继续直连", "--", "README.md",
+            extra_env={"GIT_SYNC_TEST_DIRECT": "fail"},
+        )
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(json.loads(result.stdout)["status"], "direct_unavailable")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head_before)
+
+    def test_proxy_flag_pushes_without_saving(self):
+        self.change_readme()
+        result = self.sync(
+            "--proxy", "http://127.0.0.1:20891",
+            "--message", "docs: 参数代理", "--", "README.md",
+            extra_env={
+                "GIT_SYNC_TEST_DIRECT": "fail",
+                "GIT_SYNC_TEST_PROXY_ALIVE": "1",
+                "GIT_SYNC_TEST_TUNNEL": "1",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "pushed")
+        self.assertFalse(self.state_home.exists())
+
+    def test_remember_proxy_flag_saves_preference(self):
+        self.change_readme()
+        result = self.sync(
+            "--proxy", "http://127.0.0.1:20891", "--remember-proxy",
+            "--message", "docs: 参数记住代理", "--", "README.md",
+            extra_env={
+                "GIT_SYNC_TEST_DIRECT": "fail",
+                "GIT_SYNC_TEST_PROXY_ALIVE": "1",
+                "GIT_SYNC_TEST_TUNNEL": "1",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "pushed")
+        saved = json.loads(
+            (self.state_home / ".git-auto-sync" / "proxy.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(saved["proxy_url"], "http://127.0.0.1:20891")
+
+    def test_remember_proxy_without_proxy_is_invalid(self):
+        self.change_readme()
+        head_before = git(self.repo, "rev-parse", "HEAD")
+        result = self.sync(
+            "--remember-proxy",
+            "--message", "docs: 缺代理", "--", "README.md",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)["status"], "invalid_arguments")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head_before)
+
+    def test_retry_direct_and_proxy_conflict_is_invalid(self):
+        self.change_readme()
+        head_before = git(self.repo, "rev-parse", "HEAD")
+        result = self.sync(
+            "--retry-direct", "--proxy", "http://127.0.0.1:20891",
+            "--message", "docs: 参数冲突", "--", "README.md",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)["status"], "invalid_arguments")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head_before)
+
+    def test_cli_proxy_takes_priority_over_env_proxy(self):
+        self.change_readme()
+        result = self.sync(
+            "--proxy", "http://127.0.0.1:7890", "--remember-proxy",
+            "--message", "docs: 参数优先", "--", "README.md",
+            extra_env={
+                "GIT_SYNC_TEST_DIRECT": "fail",
+                "GIT_SYNC_PROXY": "http://env-proxy.invalid:1",
+                "GIT_SYNC_TEST_PROXY_ALIVE": "1",
+                "GIT_SYNC_TEST_TUNNEL": "1",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        saved = json.loads(
+            (self.state_home / ".git-auto-sync" / "proxy.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(saved["proxy_url"], "http://127.0.0.1:7890")
+
 
 if __name__ == "__main__":
     unittest.main()

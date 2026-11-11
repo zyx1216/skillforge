@@ -370,6 +370,67 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(git(self.repo, "log", "-1", "--pretty=%s"), "docs: 权限失败")
 
 
+class NetworkArgTests(unittest.TestCase):
+    def make_args(self, **overrides):
+        import argparse
+        defaults = {
+            "retry_direct": False,
+            "proxy": None,
+            "remember_proxy": False,
+        }
+        defaults.update(overrides)
+        return argparse.Namespace(**defaults)
+
+    def test_remember_proxy_requires_proxy_value(self):
+        error = sync.validate_network_args(self.make_args(remember_proxy=True))
+        self.assertIsNotNone(error)
+        self.assertIn("--proxy", error)
+
+    def test_retry_direct_and_proxy_are_mutually_exclusive(self):
+        error = sync.validate_network_args(
+            self.make_args(retry_direct=True, proxy="http://127.0.0.1:7890")
+        )
+        self.assertIsNotNone(error)
+        self.assertIn("互斥", error)
+
+    def test_valid_combinations_pass(self):
+        self.assertIsNone(sync.validate_network_args(self.make_args()))
+        self.assertIsNone(
+            sync.validate_network_args(self.make_args(proxy="http://127.0.0.1:7890"))
+        )
+        self.assertIsNone(
+            sync.validate_network_args(
+                self.make_args(proxy="http://127.0.0.1:7890", remember_proxy=True)
+            )
+        )
+        self.assertIsNone(
+            sync.validate_network_args(self.make_args(retry_direct=True))
+        )
+
+    def test_cli_args_override_env_in_merged_network_env(self):
+        args = self.make_args(
+            proxy="http://127.0.0.1:7890", remember_proxy=True,
+        )
+        merged = sync.build_network_env(
+            args,
+            base_env={
+                "GIT_SYNC_PROXY": "http://env.invalid:1",
+                "GIT_SYNC_REMEMBER_PROXY": "0",
+                "KEEP_ME": "保留",
+            },
+        )
+        self.assertEqual(merged["GIT_SYNC_PROXY"], "http://127.0.0.1:7890")
+        self.assertEqual(merged["GIT_SYNC_REMEMBER_PROXY"], "1")
+        self.assertEqual(merged["KEEP_ME"], "保留")
+
+    def test_env_is_kept_when_cli_arg_absent(self):
+        merged = sync.build_network_env(
+            self.make_args(),
+            base_env={"GIT_SYNC_PROXY": "http://env.invalid:1"},
+        )
+        self.assertEqual(merged["GIT_SYNC_PROXY"], "http://env.invalid:1")
+
+
 class TimeoutConfigTests(unittest.TestCase):
     def test_default_timeout_is_30_seconds(self):
         self.assertEqual(sync.resolve_timeout({}), 30)

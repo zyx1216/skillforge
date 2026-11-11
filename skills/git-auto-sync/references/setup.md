@@ -58,36 +58,45 @@ SSH 命令同样在系统终端中执行，Windows 用户用 PowerShell，macOS/
 
 ## 收到 network_choice_required 后怎么回答
 
-执行器返回 `network_choice_required`（退出码 7）时还没有产生提交，改动完整保留在工作区。它不会自己决定走哪条路，需要你通过环境变量表明选择，然后用原来的命令重新调用执行器。
+执行器返回 `network_choice_required`（退出码 7）时还没有产生提交，改动完整保留在工作区。它不会自己决定走哪条路，需要你在原命令上加上对应参数重新调用执行器。推荐用命令行参数，直观、可复制，也不会污染终端环境。
 
 ### 选项 A：再试一轮直连
 
-适合你判断只是临时抖动，或刚切换了网络。设置 `GIT_SYNC_RETRY_DIRECT=1` 后重跑，执行器会再做一轮 3 次直连；这一轮仍全败会返回 `direct_unavailable`，不会继续无限重试。
+适合你判断只是临时抖动，或刚切换了网络。在原命令上加 `--retry-direct`，执行器会再做一轮 3 次直连；这一轮仍全败会返回 `direct_unavailable`，不会继续无限重试。
 
 ```powershell
-$env:GIT_SYNC_RETRY_DIRECT = "1"
-python "<skill目录>/scripts/sync.py" --message "<中文提交说明>" --allow-dirty -- <路径>
-Remove-Item Env:GIT_SYNC_RETRY_DIRECT
+python "<skill目录>/scripts/sync.py" --retry-direct --message "<中文提交说明>" --allow-dirty -- <路径>
 ```
 
 ### 选项 B：提供代理
 
-把代理地址放进 `GIT_SYNC_PROXY`，执行器会先验证端口存活，再确认代理真能连到 `github.com:443`：HTTP 代理要能建立 CONNECT 隧道，SOCKS5 代理要能完成无认证握手。端口在监听但隧道或握手失败，说明代理节点本身有问题，执行器会返回 `network_choice_required` 并在 `reasons` 里带 `proxy_node_failed`，不会带着坏代理走到推送失败。验证通过才用一次性 `git -c http.proxy=...` 推送。
+在原命令上加 `--proxy <url>`，执行器会先验证端口存活，再确认代理真能连到 `github.com:443`：HTTP 代理要能建立 CONNECT 隧道，SOCKS5 代理要能完成无认证握手。端口在监听但隧道或握手失败，说明代理节点本身有问题，执行器会返回 `network_choice_required` 并在 `reasons` 里带 `proxy_node_failed`，不会带着坏代理走到推送失败。验证通过才用一次性 `git -c http.proxy=...` 推送。
 
 ```powershell
-$env:GIT_SYNC_PROXY = "http://127.0.0.1:20891"
-python "<skill目录>/scripts/sync.py" --message "<中文提交说明>" --allow-dirty -- <路径>
-Remove-Item Env:GIT_SYNC_PROXY
+python "<skill目录>/scripts/sync.py" --proxy "http://127.0.0.1:20891" --message "<中文提交说明>" --allow-dirty -- <路径>
 ```
 
-希望以后直连三败时自动用这个代理兜底，就同时设置 `GIT_SYNC_REMEMBER_PROXY=1`，地址会写入 `~/.git-auto-sync/proxy.json`。只在这一轮用就不要设记住开关。
+希望以后直连三败时自动用这个代理兜底，就再加 `--remember-proxy`，地址会写入 `~/.git-auto-sync/proxy.json`。只在这一轮用就不要加这个开关。
 
 ```powershell
-$env:GIT_SYNC_PROXY = "http://127.0.0.1:20891"
-$env:GIT_SYNC_REMEMBER_PROXY = "1"
-python "<skill目录>/scripts/sync.py" --message "<中文提交说明>" --allow-dirty -- <路径>
-Remove-Item Env:GIT_SYNC_PROXY
-Remove-Item Env:GIT_SYNC_REMEMBER_PROXY
+python "<skill目录>/scripts/sync.py" --proxy "http://127.0.0.1:20891" --remember-proxy --message "<中文提交说明>" --allow-dirty -- <路径>
+```
+
+参数规则：
+
+- `--retry-direct` 和 `--proxy` 互斥，继续直连和提供代理只能二选一，同时给会返回 `invalid_arguments`。
+- `--remember-proxy` 必须配合 `--proxy`，单独给会返回 `invalid_arguments`。
+- 带 `--proxy` 重跑时仍先做首轮直连，直连恢复就优先直连，直连失败才用代理。
+
+### 兼容：旧的环境变量写法
+
+命令行参数出现之前用的三个环境变量仍然支持，旧脚本和旧文档里的调用不会失效。优先级是命令行参数高于环境变量；同时给时以命令行参数为准。
+
+- `--retry-direct` 等价于 `GIT_SYNC_RETRY_DIRECT=1`。
+- `--proxy <url>` 等价于 `GIT_SYNC_PROXY=<url>`。
+- `--remember-proxy` 等价于 `GIT_SYNC_REMEMBER_PROXY=1`。
+
+新调用统一用命令行参数，环境变量只作为兼容和自动化场景的备用入口。
 ```
 
 ### 风险提示和状态字段

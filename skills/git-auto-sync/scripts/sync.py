@@ -93,9 +93,9 @@ NETWORK_EXIT_CODE = 7
 DEPENDENCY_EXIT_CODE = 8
 
 
-def evaluate_network():
+def evaluate_network(env=None):
     """提交前跑连接状态机，返回需要停下的报告；直连或可用代理返回 None。"""
-    decision = network_adapter.decide_network_action(os.environ)
+    decision = network_adapter.decide_network_action(env if env is not None else os.environ)
     outcome = decision["outcome"]
     if outcome == "direct":
         return None
@@ -257,8 +257,32 @@ def parse_args():
     parser = argparse.ArgumentParser(description="提交指定路径并推送当前分支 upstream")
     parser.add_argument("--message", required=True, help="Codex 根据实际改动生成的提交说明")
     parser.add_argument("--allow-dirty", action="store_true", help="确认路径中的改动均由本任务产生")
+    parser.add_argument("--retry-direct", action="store_true", help="三败后再做一轮直连重试")
+    parser.add_argument("--proxy", default=None, help="三败后本轮使用的代理地址")
+    parser.add_argument("--remember-proxy", action="store_true", help="同时记住 --proxy 给的代理，供以后兜底")
     parser.add_argument("paths", nargs="*", help="只暂存这些仓库相对路径")
     return parser.parse_args()
+
+
+def validate_network_args(args):
+    """校验网络重跑参数的组合，返回错误信息；合法时返回 None。"""
+    if args.remember_proxy and not args.proxy:
+        return "--remember-proxy 必须和 --proxy 一起使用，不能单独记住代理"
+    if args.retry_direct and args.proxy:
+        return "--retry-direct 和 --proxy 互斥，继续直连和提供代理只能二选一"
+    return None
+
+
+def build_network_env(args, base_env=None):
+    """命令行参数优先于旧环境变量，合并出状态机读取的环境。"""
+    env = dict(base_env if base_env is not None else os.environ)
+    if args.retry_direct:
+        env["GIT_SYNC_RETRY_DIRECT"] = "1"
+    if args.proxy:
+        env["GIT_SYNC_PROXY"] = args.proxy
+    if args.remember_proxy:
+        env["GIT_SYNC_REMEMBER_PROXY"] = "1"
+    return env
 
 
 def main():
@@ -267,6 +291,9 @@ def main():
         return report("invalid_arguments", 2, error="必须提供提交说明和至少一个路径")
     if any(PurePath(path).is_absolute() or ".." in PurePath(path).parts for path in args.paths):
         return report("invalid_arguments", 2, error="路径必须是仓库内的相对路径")
+    network_arg_error = validate_network_args(args)
+    if network_arg_error is not None:
+        return report("invalid_arguments", 2, error=network_arg_error)
     sensitive = [path for path in args.paths if is_sensitive(path)]
     if sensitive:
         return report("blocked_sensitive_path", 3, paths=sensitive)
@@ -316,7 +343,7 @@ def main():
             commit = run_git(["rev-parse", "HEAD"]).stdout.strip()
             return report("missing_upstream", 2, commit=commit, error="没有可安全确定的当前分支 upstream")
         remote_name, remote_branch, branch, upstream_name, first_push = target
-        decision = evaluate_network()
+        decision = evaluate_network(env=build_network_env(args))
         if isinstance(decision, int):
             return decision
         proxy_url = decision["proxy_url"] if decision else None

@@ -39,7 +39,7 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
    - `authentication_required`：预检发现未登录、凭据失效或账号无权限，向用户展示 `setup` 中的配置步骤；此状态在提交前返回，不得索要 Token。
    - `remote_unavailable`：远程地址不存在、网络不可用或无法确认权限，展示脱敏错误并让用户检查地址与网络。
    - `proxy_error`：代理未启动或端口错误。执行器只探测本机回环的常见代理端口，`setup` 会给出当前在监听的替代端口和一次性命令；没有可用端口时才建议直连绕过。不得自动修改代理或自动绕过，只有用户明确同意时才建议手动执行命令。
-   - `network_choice_required`：连接状态机启用后直连重试三次全败，需要用户决定继续直连还是提供代理。展示诊断里的重试次数、443/22 端口状态、已记住代理是否存活、系统代理是否残留，按 [references/setup.md](references/setup.md) 的“收到 network_choice_required 后怎么回答”用环境变量重跑，不自动改网络。
+   - `network_choice_required`：连接状态机启用后直连重试三次全败，需要用户决定继续直连还是提供代理。展示诊断里的重试次数、443/22 端口状态、已记住代理是否存活、系统代理是否残留，按 [references/setup.md](references/setup.md) 的“收到 network_choice_required 后怎么回答”用命令行参数重跑，不自动改网络。继续直连在原命令加 `--retry-direct`；提供代理加 `--proxy <url>`，要同时记住再加 `--remember-proxy`。两个选择互斥，`--remember-proxy` 必须配合 `--proxy`，参数组合不合法会返回 `invalid_arguments`。
    - `direct_unavailable`：用户选了继续直连，第二轮三次仍全败。明确告知当前窗口直连 GitHub 不可用，不再重试，等用户切换网络或提供代理。
    - 决策结果带 `remote_risk=true` 时，说明代理不是本机回环地址，要先提示凭据泄露风险再让用户确认。
    - `blocked_sensitive_path`：敏感文件未提交，告知用户具体路径。
