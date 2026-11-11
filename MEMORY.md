@@ -20,6 +20,11 @@
 - 2026-11-10：代理可用性分两层。先看端口存活，HTTP 代理再发 `CONNECT github.com:443`，2xx 才算隧道可用；SOCKS 第一版保守处理，只看端口不做握手。端口活但隧道失败返回 `proxy_node_failed`，在提交前拦回 `need_choice`，不再带坏代理走到 `push_failed`。
 - 2026-11-10：重试间隔统一成 `random.uniform(1,2)`，生产用真实 `time.sleep`，测试通过注入 no-op sleep 保持快速。决策结果新增 `remote_risk`，非回环代理在使用前暴露凭据风险。
 - 2026-11-10：`network_choice_required` 的回答方式固定为环境变量重跑：`GIT_SYNC_RETRY_DIRECT=1` 再试一轮，`GIT_SYNC_PROXY=<url>` 给代理，加 `GIT_SYNC_REMEMBER_PROXY=1` 同时记住。带 `GIT_SYNC_TEST_` 前缀的变量只用于测试注入，不写进用户文档。
+- 2026-11-11：第五轮针对“陌生用户能不能顺利用”的评审做平台与协议补强，测试从 107 个增至 127 个，分两个独立提交。
+- 2026-11-11：新增 `scripts/git_platform.py` 集中放平台识别和认证指引。Windows 保留 PowerShell 步骤，macOS/Linux 给通用终端指引并提示系统代理检测仅 Windows 可用；写死“打开 Windows PowerShell”的旧文案删除。SKILL.md 显式声明“当前仅 Windows 完整支持”，避免其他系统用户装了才发现一半能力缺失。
+- 2026-11-11：启动闸门前置。`sync.main()` 在任何 git 操作前先跑 `dependency_check()`，PATH 无可用 git 直接返回 `missing_dependency`（新退出码 8），不产生提交。子进程测试靠 `GIT_SYNC_TEST_GIT_AVAILABLE` 注入，线上不设此变量才真实执行 `git --version`。
+- 2026-11-11：SOCKS5 从“只看端口”升级为真实无认证握手。`network.socks5_tunnel` 先发方法协商（`05 01 00`，期望回 `05 00`），再发域名方式 CONNECT，回复码 `00` 才算节点可用；按协议分发的 `proxy_tunnel` 统一 HTTP CONNECT 和 SOCKS5 两条路径，`connection.proxy_usable` 对两类代理一视同仁，握手失败回 `need_choice` 并带 `proxy_node_failed`。
+- 2026-11-11：跨平台兼容。`socket.recv_exactly` 是 Python 3.13 才有，改用内部 `_recv_exactly` 循环读定长字节，兼容更老的 Python 3。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
@@ -30,6 +35,8 @@
 - Windows Git 输出可能使用本地编码；执行器统一设置 `LC_ALL=C.UTF-8` 和 UTF-8 JSON 输出。
 - 本地 bare 测试远程必须设置 `HEAD` 指向 `main`，否则 clone 没有工作树，远程分叉测试也会失真。
 - 2026-11-10 代理实测：HTTP 代理 `127.0.0.1:20891` 端口在监听，但对 GitHub HTTPS 连续两次报 TLS unexpected eof；改用 `socks5h://127.0.0.1:7894`（同进程监听）一次成功。核对远程用 `git -c http.proxy=socks5h://127.0.0.1:7894 -c https.proxy=socks5h://127.0.0.1:7894 ls-remote origin`。全局 gitconfig 仍指向失效的 20890，是否统一改端口等用户拍板，执行器不自动改。
+- 2026-11-11：写 SOCKS5 假服务器测试时连续踩三个协议细节。一是问候报文是 3 字节（版本+方法数+各方法），只 `read(2)` 会把方法字节留在缓冲区导致后续全部错位；二是 CONNECT 请求固定头是版本、命令、保留 3 字节，地址类型在第 4 字节，误把保留字节当 atyp 会按 IPv6 读 16 字节直到超时；三是 TCP 的 `recv(n)` 不保证一次收满，生产侧必须循环读定长，假服务器回复前要 `flush` 并开 `daemon_threads`，否则客户端可能在回复送达前就关闭连接。
+- 2026-11-11：测试工具函数 `git()` 对输出做了 `strip()`，断言 `git status --porcelain` 这类带前导空格的原始输出时要绕过它，直接用 `subprocess.run` 取未裁剪文本，不能想当然补空格。
 
 ## 当前进度
 - 2026-11-04：现用 `git-init` 已加入自动提交推送规则并通过官方格式校验。
