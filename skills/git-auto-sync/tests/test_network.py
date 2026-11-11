@@ -1,6 +1,7 @@
 import unittest
 import sys
 import http.server
+import socketserver
 import threading
 from pathlib import Path
 
@@ -247,10 +248,86 @@ class HttpConnectTests(unittest.TestCase):
         )
         self.assertFalse(ok)
 
-    def test_socks_proxy_skips_connect_and_falls_back_to_port_check(self):
+    def make_socks5_server(self, reply):
+        class Handler(socketserver.StreamRequestHandler):
+            timeout = 3
+
+            def handle(self):
+                version_nmethods = self.rfile.read(2)
+                if version_nmethods != b"\x05\x01":
+                    return
+                self.rfile.read(version_nmethods[1])
+                self.wfile.write(b"\x05\x00")
+                fixed = self.rfile.read(3)
+                if fixed[:2] != b"\x05\x01":
+                    return
+                atyp = self.rfile.read(1)[0]
+                if atyp == 0x03:
+                    length = self.rfile.read(1)[0]
+                    self.rfile.read(length)
+                else:
+                    self.rfile.read(4 if atyp == 0x01 else 16)
+                self.rfile.read(2)
+                self.wfile.write(reply)
+                self.wfile.flush()
+
+        server = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        return server, thread
+
+    def test_socks5_handshake_success_returns_true(self):
+        success_reply = b"\x05\x00\x00\x01" + bytes([127, 0, 0, 1]) + (443).to_bytes(2, "big")
+        server, thread = self.make_socks5_server(success_reply)
+        try:
+            ok = network.socks5_tunnel(
+                f"socks5h://127.0.0.1:{server.server_address[1]}",
+                target_host="github.com", target_port=443, timeout=3,
+            )
+        finally:
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertTrue(ok)
+
+    def test_socks5_node_refusal_returns_false(self):
+        refused_reply = b"\x05\x05\x00\x01" + bytes([127, 0, 0, 1]) + (443).to_bytes(2, "big")
+        server, thread = self.make_socks5_server(refused_reply)
+        try:
+            ok = network.socks5_tunnel(
+                f"socks5://127.0.0.1:{server.server_address[1]}",
+                target_host="github.com", target_port=443, timeout=3,
+            )
+        finally:
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertFalse(ok)
+
+    def test_socks5_broken_server_returns_false_without_raising(self):
+        class RudeHandler(socketserver.StreamRequestHandler):
+            def handle(self):
+                self.request.close()
+
+        server = socketserver.TCPServer(("127.0.0.1", 0), RudeHandler)
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            ok = network.socks5_tunnel(
+                f"socks5h://127.0.0.1:{server.server_address[1]}",
+                target_host="github.com", target_port=443, timeout=3,
+            )
+        finally:
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertFalse(ok)
+
+    def test_socks5_missing_port_returns_false(self):
+        self.assertFalse(network.socks5_tunnel("socks5h://127.0.0.1", timeout=1))
+
+    def test_http_tunnel_rejects_socks_scheme(self):
         class RecordingFactory:
             def __call__(self, *args):
-                raise AssertionError("SOCKS 第一版不应尝试 HTTP CONNECT")
+                raise AssertionError("HTTP CONNECT 不应处理 socks 协议")
 
         ok = network.http_connect_tunnel(
             "socks5h://127.0.0.1:7894",

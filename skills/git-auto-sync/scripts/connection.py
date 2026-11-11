@@ -13,7 +13,7 @@ from network import (
     DIRECT_ATTEMPTS,
     RETRY_DELAY_MAX,
     RETRY_DELAY_MIN,
-    http_connect_tunnel,
+    proxy_tunnel,
 )
 import proxy_pref
 
@@ -62,7 +62,7 @@ class ConnectionPolicy:
         self.last_direct_ports = DirectPorts(False, False)
         self.git_proxy = git_proxy
         self.env_proxy = env_proxy
-        self.proxy_tunnel_probe = proxy_tunnel_probe or http_connect_tunnel
+        self.proxy_tunnel_probe = proxy_tunnel_probe or proxy_tunnel
 
     def run_direct_round(self):
         """一轮直连重试，最多 attempts 次，任一成功即 True。"""
@@ -96,13 +96,10 @@ class ConnectionPolicy:
     def proxy_usable(self, proxy_url):
         """端口存活后再验证代理是否真能建到 GitHub 的隧道。
 
-        HTTP 代理必须 CONNECT 成功；SOCKS 第一版保守处理，只要求端口存活。
+        HTTP 代理必须 CONNECT 成功，SOCKS5 必须握手成功，失败都回到询问。
         """
         if not self.proxy_alive(proxy_url):
             return False, "saved_proxy_unreachable"
-        scheme = (urlparse(proxy_url).scheme or "").lower()
-        if scheme.startswith("socks"):
-            return True, None
         if self.proxy_tunnel_probe(proxy_url):
             return True, None
         return False, "proxy_node_failed"

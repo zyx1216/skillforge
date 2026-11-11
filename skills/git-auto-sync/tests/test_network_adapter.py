@@ -159,6 +159,27 @@ class DecideNetworkActionTests(unittest.TestCase):
         result = network_adapter.decide_network_action(env)
         self.assertEqual(result["outcome"], "use_saved_proxy")
 
+    def test_socks_proxy_with_dead_node_returns_need_choice(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_TEST_SAVED_PROXY="socks5h://127.0.0.1:7894",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="0",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "need_choice")
+        self.assertIn("proxy_node_failed", result["reasons"])
+
+    def test_socks_proxy_with_working_handshake_is_used(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_TEST_SAVED_PROXY="socks5h://127.0.0.1:7894",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="1",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "use_saved_proxy")
+
     def test_remote_proxy_is_flagged_in_decision(self):
         env = self.base_env(
             GIT_SYNC_TEST_DIRECT="fail",

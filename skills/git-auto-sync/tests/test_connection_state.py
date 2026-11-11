@@ -121,7 +121,7 @@ class StateMachineTests(unittest.TestCase):
         self.assertEqual(decision.outcome, connection.NEED_CHOICE)
         self.assertIn("proxy_node_failed", decision.reasons)
 
-    def test_socks_proxy_skips_tunnel_and_uses_port_check(self):
+    def test_socks_proxy_requires_successful_handshake(self):
         policy = self.make_policy(
             direct_results=[False, False, False],
             saved_proxy="socks5h://127.0.0.1:7894",
@@ -129,7 +129,19 @@ class StateMachineTests(unittest.TestCase):
             proxy_tunnel_probe=lambda url: False,
         )
         decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.NEED_CHOICE)
+        self.assertIn("proxy_node_failed", decision.reasons)
+
+    def test_socks_proxy_with_working_handshake_is_used(self):
+        policy = self.make_policy(
+            direct_results=[False, False, False],
+            saved_proxy="socks5h://127.0.0.1:7894",
+            proxy_port_probe=lambda url: True,
+            proxy_tunnel_probe=lambda url: True,
+        )
+        decision = connection.plan_connection(policy)
         self.assertEqual(decision.outcome, connection.USE_SAVED_PROXY)
+        self.assertEqual(decision.proxy_url, "socks5h://127.0.0.1:7894")
 
     def test_retry_direct_runs_another_round_then_stops(self):
         policy = self.make_policy(

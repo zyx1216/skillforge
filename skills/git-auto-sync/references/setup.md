@@ -72,7 +72,7 @@ Remove-Item Env:GIT_SYNC_RETRY_DIRECT
 
 ### 选项 B：提供代理
 
-把代理地址放进 `GIT_SYNC_PROXY`，执行器会先验证端口存活，HTTP 代理还要能对 `github.com:443` 建立 CONNECT 隧道，验证通过才用一次性 `git -c http.proxy=...` 推送。
+把代理地址放进 `GIT_SYNC_PROXY`，执行器会先验证端口存活，再确认代理真能连到 `github.com:443`：HTTP 代理要能建立 CONNECT 隧道，SOCKS5 代理要能完成无认证握手。端口在监听但隧道或握手失败，说明代理节点本身有问题，执行器会返回 `network_choice_required` 并在 `reasons` 里带 `proxy_node_failed`，不会带着坏代理走到推送失败。验证通过才用一次性 `git -c http.proxy=...` 推送。
 
 ```powershell
 $env:GIT_SYNC_PROXY = "http://127.0.0.1:20891"

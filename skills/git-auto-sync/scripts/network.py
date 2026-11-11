@@ -113,6 +113,73 @@ def http_connect_tunnel(
         return False
 
 
+def socks5_tunnel(
+    proxy_url, target_host=GITHUB_HOST, target_port=443,
+    timeout=DIRECT_TIMEOUT, socket_factory=None,
+):
+    """无认证 SOCKS5 握手，能连到目标主机端口才算代理真正可用。
+
+    先做方法协商（只声明无认证），再发 CONNECT 请求；代理返回成功
+    （回复码 0x00）才为 True。只支持无认证，任何协议或连接异常都归为
+    不可达，不向外抛。
+    """
+    parsed = urlparse(proxy_url)
+    host = parsed.hostname
+    port = parsed.port
+    if not host or not port:
+        return False
+    factory = socket_factory or socket.socket
+    try:
+        with factory(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect((host, port))
+            sock.sendall(b"\x05\x01\x00")
+            method_reply = _recv_exactly(sock, 2)
+            if method_reply != b"\x05\x00":
+                return False
+            host_bytes = target_host.encode("idna")
+            request = (
+                b"\x05\x01\x00\x03"
+                + bytes([len(host_bytes)])
+                + host_bytes
+                + int(target_port).to_bytes(2, "big")
+            )
+            sock.sendall(request)
+            head = _recv_exactly(sock, 2)
+            if head[0] != 0x05:
+                return False
+            return head[1] == 0x00
+    except (OSError, UnicodeError):
+        return False
+
+
+def _recv_exactly(sock, size):
+    """TCP 不保证一次 recv 收满，循环读到指定字节数，对端提前关闭则报错。"""
+    chunks = []
+    remaining = size
+    while remaining > 0:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise OSError("连接在读完前关闭")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def proxy_tunnel(proxy_url, target_host=GITHUB_HOST, target_port=443, timeout=DIRECT_TIMEOUT):
+    """按代理协议选探针：SOCKS 走握手，其余走 HTTP CONNECT。"""
+    scheme = (urlparse(proxy_url).scheme or "").lower()
+    if scheme.startswith("socks"):
+        return socks5_tunnel(
+            proxy_url, target_host=target_host,
+            target_port=target_port, timeout=timeout,
+        )
+    return http_connect_tunnel(
+        proxy_url, target_host=target_host,
+        target_port=target_port, timeout=timeout,
+    )
+
+
 def wait_for_direct(attempts=DIRECT_ATTEMPTS, timeout=DIRECT_TIMEOUT, probe=None, sleep=None):
     """直连重试，任一轮 443 可达即成功；全败返回 False。
 
