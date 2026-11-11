@@ -40,7 +40,7 @@ SSH 命令同样在系统终端中执行，Windows 用户用 PowerShell，macOS/
 2. 确认仓库远程使用 SSH 地址，例如 `git@github.com:用户名/仓库.git`。
 3. 运行 `ssh -T git@github.com` 验证连接。
 
-未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。Windows 用户收到的指引是 PowerShell 步骤，macOS/Linux 用户收到的是通用终端步骤。注意系统代理残留检测目前只有 Windows 实现，其他系统需要你自己手动检查代理设置。
+未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。Windows 用户收到的指引是 PowerShell 步骤，macOS/Linux 用户收到的是通用终端步骤。系统代理残留检测三个平台都支持，具体读取方式见下文“系统代理残留”。
 
 ## 为什么浏览器能打开 GitHub，git 却报无法接入
 
@@ -105,9 +105,13 @@ python "<skill目录>/scripts/sync.py" --proxy "http://127.0.0.1:20891" --rememb
 
 ## 系统代理残留（任何代理软件都可能出现）
 
-代理软件开“系统代理模式”时，会把 Windows 的系统代理开关打开并指向自己的本地端口。如果软件异常退出、没正常关闭，这个开关可能残留为开，但指向的端口已经没有服务，结果连国内网站也打不开。这不是某一款软件的问题，任何改系统代理的工具异常退出都可能留下这个状态。
+代理软件开“系统代理模式”时，会把操作系统的代理开关打开并指向自己的本地端口。如果软件异常退出、没正常关闭，这个开关可能残留为开，但指向的端口已经没有服务，结果连国内网站也打不开。这不是某一款软件或某一个系统的问题，任何改系统代理的工具异常退出都可能留下这个状态。
 
-skill 会做通用检测，不针对具体品牌：读 Windows 系统代理开关和它指向的端口，再用 socket 测那个端口有没有服务。
+skill 做的是通用检测，不针对具体品牌：先读当前系统的代理开关和它指向的端口，再用 socket 测那个端口有没有服务。各平台的读取方式不同：
+
+- Windows：读当前用户注册表里的 `ProxyEnable` 和 `ProxyServer`。
+- macOS：用 `networksetup -listallnetworkservices` 列出网络服务，再对每个服务读 `-getwebproxy`、`-getsecurewebproxy`、`-getsocksfirewallproxy`，这些都是查询操作，不需要 sudo。
+- Linux：第一版只支持 GNOME，用 `gsettings` 读 `org.gnome.system.proxy`，仅 `mode` 为 `manual` 时才取 http/https/socks 的地址和端口。纯服务器、无桌面、KDE 等其他环境没有 `gsettings` 或模式不是 manual，检测保守跳过并返回空，不报错。
 
 - 开关为开、端口无服务：判定为系统代理残留，在 `network_choice_required` 的诊断里给出 `system_proxy_residual`。
 - 开关为开、端口有服务但仍连不上：归为代理软件的节点或规则问题，标记 `system_proxy_node_issue`，不叫残留。
@@ -115,7 +119,10 @@ skill 会做通用检测，不针对具体品牌：读 Windows 系统代理开�
 skill 只检测和提示，不会自动复位系统代理。确认是残留后，复位由你自己操作，二选一：
 
 1. 重新打开你的代理软件，正常退出一次，让它把系统代理开关关回去。
-2. 在 Windows 设置 → 网络和 Internet → 代理 → 手动设置代理，把“使用代理服务器”关掉。
+2. 手动关掉系统代理开关：
+   - Windows：设置 → 网络和 Internet → 代理 → 手动设置代理，把“使用代理服务器”关掉。
+   - macOS：系统设置 → 网络 → 选中当前服务 → 详细信息 → 代理，取消勾选的代理协议。
+   - GNOME：设置 → 网络 → 网络代理，改为“禁用”，或运行 `gsettings set org.gnome.system.proxy mode 'none'`。
 
 ## 记住的代理存在哪里
 
@@ -184,7 +191,7 @@ git -c http.proxy=socks5h://127.0.0.1:7894 -c https.proxy=socks5h://127.0.0.1:78
 
 ## 限制
 
-- 当前仅在 Windows 上完整支持。提交、推送、凭据和代理状态机本身跨平台，但系统代理残留检测依赖 Windows 注册表，macOS/Linux 上会自动跳过这一项，认证指引也改为通用终端版本。
+- 提交、推送、凭据和代理状态机跨平台，系统代理残留检测覆盖 Windows、macOS 和 Linux。Linux 第一版只实现 GNOME 的 `gsettings` 读取，KDE、无桌面或没有 `gsettings` 的环境会跳过系统代理检测，不影响其他功能；认证指引在非 Windows 上给通用终端版本。
 - 敏感文件名检查加新增行内容扫描都不是完整密钥审计，识别不了编码、拆分或拼接的密钥，公开前仍要人工过一遍 diff。
 - 保护分支或需要 PR 审查的仓库不应直接自动推送。
 - 网络、认证和远程分叉需要用户处理，执行器不会强推。

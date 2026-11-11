@@ -337,5 +337,182 @@ class HttpConnectTests(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class MacOSProxyTests(unittest.TestCase):
+    SERVICES = "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\nEthernet\n"
+
+    def runner_returning(self, mapping):
+        def fake_runner(command):
+            key = tuple(command)
+            if key not in mapping:
+                raise AssertionError(f"未预期的命令: {command}")
+            return mapping[key]
+        return fake_runner
+
+    def test_enabled_web_proxy_is_read(self):
+        getweb = "Enabled: Yes\nServer: 127.0.0.1\nPort: 7890\nAuthenticated Proxy Enabled: 0\n"
+        runner = self.runner_returning({
+            ("networksetup", "-listallnetworkservices"): self.SERVICES,
+            ("networksetup", "-getwebproxy", "Wi-Fi"): getweb,
+            ("networksetup", "-getsecurewebproxy", "Wi-Fi"): "Enabled: No\nServer:\nPort: 0\n",
+            ("networksetup", "-getsocksfirewallproxy", "Wi-Fi"): "Enabled: No\nServer:\nPort: 0\n",
+        })
+        result = network.read_macos_proxy(runner=runner)
+        self.assertEqual(result["ProxyEnable"], 1)
+        self.assertEqual(result["ProxyServer"], "127.0.0.1:7890")
+
+    def test_all_disabled_returns_switched_off(self):
+        off = "Enabled: No\nServer:\nPort: 0\n"
+        runner = self.runner_returning({
+            ("networksetup", "-listallnetworkservices"): (
+                "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\n"
+            ),
+            ("networksetup", "-getwebproxy", "Wi-Fi"): off,
+            ("networksetup", "-getsecurewebproxy", "Wi-Fi"): off,
+            ("networksetup", "-getsocksfirewallproxy", "Wi-Fi"): off,
+        })
+        self.assertEqual(
+            network.read_macos_proxy(runner=runner),
+            {"ProxyEnable": 0, "ProxyServer": ""},
+        )
+
+    def test_second_service_is_checked_when_first_disabled(self):
+        getsocks = "Enabled: Yes\nServer: 127.0.0.1\nPort: 7894\n"
+        off = "Enabled: No\nServer:\nPort: 0\n"
+        runner = self.runner_returning({
+            ("networksetup", "-listallnetworkservices"): self.SERVICES,
+            ("networksetup", "-getwebproxy", "Wi-Fi"): off,
+            ("networksetup", "-getsecurewebproxy", "Wi-Fi"): off,
+            ("networksetup", "-getsocksfirewallproxy", "Wi-Fi"): off,
+            ("networksetup", "-getwebproxy", "Ethernet"): off,
+            ("networksetup", "-getsecurewebproxy", "Ethernet"): off,
+            ("networksetup", "-getsocksfirewallproxy", "Ethernet"): getsocks,
+        })
+        result = network.read_macos_proxy(runner=runner)
+        self.assertEqual(result["ProxyEnable"], 1)
+        self.assertEqual(result["ProxyServer"], "127.0.0.1:7894")
+
+    def test_missing_networksetup_returns_none(self):
+        def missing_runner(command):
+            raise FileNotFoundError("networksetup 不存在")
+        self.assertIsNone(network.read_macos_proxy(runner=missing_runner))
+
+    def test_service_name_with_space_uses_argument_array(self):
+        services = "An asterisk (*) denotes that a network service is disabled.\nUSB 10/100/1000 LAN\n"
+        getweb = "Enabled: Yes\nServer: 127.0.0.1\nPort: 8080\n"
+        seen = []
+
+        def fake_runner(command):
+            seen.append(command)
+            if command == ["networksetup", "-listallnetworkservices"]:
+                return services
+            if command == ["networksetup", "-getwebproxy", "USB 10/100/1000 LAN"]:
+                return getweb
+            return "Enabled: No\nServer:\nPort: 0\n"
+
+        result = network.read_macos_proxy(runner=fake_runner)
+        self.assertEqual(result["ProxyServer"], "127.0.0.1:8080")
+        self.assertIn(["networksetup", "-getwebproxy", "USB 10/100/1000 LAN"], seen)
+
+
+class LinuxProxyTests(unittest.TestCase):
+    def runner_returning(self, mapping):
+        def fake_runner(command):
+            key = tuple(command)
+            if key not in mapping:
+                raise AssertionError(f"未预期的命令: {command}")
+            return mapping[key]
+        return fake_runner
+
+    def test_manual_mode_reads_http_host_and_port(self):
+        runner = self.runner_returning({
+            ("gsettings", "get", "org.gnome.system.proxy", "mode"): "'manual'",
+            ("gsettings", "get", "org.gnome.system.proxy", "http", "host"): "'127.0.0.1'",
+            ("gsettings", "get", "org.gnome.system.proxy", "http", "port"): "7890",
+            ("gsettings", "get", "org.gnome.system.proxy", "https", "host"): "''",
+            ("gsettings", "get", "org.gnome.system.proxy", "https", "port"): "0",
+            ("gsettings", "get", "org.gnome.system.proxy", "socks", "host"): "''",
+            ("gsettings", "get", "org.gnome.system.proxy", "socks", "port"): "0",
+        })
+        result = network.read_linux_proxy(runner=runner)
+        self.assertEqual(result["ProxyEnable"], 1)
+        self.assertEqual(result["ProxyServer"], "127.0.0.1:7890")
+
+    def test_none_mode_returns_none(self):
+        runner = self.runner_returning({
+            ("gsettings", "get", "org.gnome.system.proxy", "mode"): "'none'",
+        })
+        self.assertIsNone(network.read_linux_proxy(runner=runner))
+
+    def test_missing_gsettings_returns_none(self):
+        def missing_runner(command):
+            raise FileNotFoundError("gsettings 不存在")
+        self.assertIsNone(network.read_linux_proxy(runner=missing_runner))
+
+    def test_manual_without_host_returns_none(self):
+        runner = self.runner_returning({
+            ("gsettings", "get", "org.gnome.system.proxy", "mode"): "'manual'",
+            ("gsettings", "get", "org.gnome.system.proxy", "http", "host"): "''",
+            ("gsettings", "get", "org.gnome.system.proxy", "http", "port"): "0",
+            ("gsettings", "get", "org.gnome.system.proxy", "https", "host"): "''",
+            ("gsettings", "get", "org.gnome.system.proxy", "https", "port"): "0",
+            ("gsettings", "get", "org.gnome.system.proxy", "socks", "host"): "''",
+            ("gsettings", "get", "org.gnome.system.proxy", "socks", "port"): "0",
+        })
+        self.assertIsNone(network.read_linux_proxy(runner=runner))
+
+
+class SystemProxyDispatchTests(unittest.TestCase):
+    def test_dispatch_picks_macos_reader(self):
+        def fake_runner(command):
+            if command == ["networksetup", "-listallnetworkservices"]:
+                return "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\n"
+            if command == ["networksetup", "-getwebproxy", "Wi-Fi"]:
+                return "Enabled: Yes\nServer: 127.0.0.1\nPort: 7890\n"
+            return "Enabled: No\nServer:\nPort: 0\n"
+
+        result = network.read_system_proxy_raw(platform_name="darwin", runner=fake_runner)
+        self.assertEqual(result["ProxyServer"], "127.0.0.1:7890")
+
+    def test_dispatch_picks_linux_reader(self):
+        def fake_runner(command):
+            if tuple(command[-2:]) == ("org.gnome.system.proxy", "mode"):
+                return "'none'"
+            raise AssertionError(f"未预期命令: {command}")
+
+        self.assertIsNone(
+            network.read_system_proxy_raw(platform_name="linux", runner=fake_runner)
+        )
+
+    def test_dispatch_picks_windows_reader(self):
+        def fake_registry():
+            return {"ProxyEnable": 1, "ProxyServer": "127.0.0.1:7890"}
+
+        result = network.read_system_proxy_raw(
+            platform_name="win32", registry_reader=fake_registry,
+        )
+        self.assertEqual(result["ProxyServer"], "127.0.0.1:7890")
+
+    def test_unknown_platform_returns_none(self):
+        self.assertIsNone(
+            network.read_system_proxy_raw(platform_name="plan9", runner=lambda c: "")
+        )
+
+    def test_detect_system_proxy_uses_dispatch_and_keeps_status_shape(self):
+        def fake_runner(command):
+            if command == ["networksetup", "-listallnetworkservices"]:
+                return "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\n"
+            if command == ["networksetup", "-getwebproxy", "Wi-Fi"]:
+                return "Enabled: Yes\nServer: 127.0.0.1\nPort: 7890\n"
+            return "Enabled: No\nServer:\nPort: 0\n"
+
+        status = network.detect_system_proxy(
+            platform_name="darwin", runner=fake_runner,
+            port_probe=lambda port: False,
+        )
+        self.assertEqual(status.host, "127.0.0.1")
+        self.assertEqual(status.port, 7890)
+        self.assertTrue(status.residual)
+
+
 if __name__ == "__main__":
     unittest.main()

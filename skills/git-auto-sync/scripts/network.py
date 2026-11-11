@@ -6,6 +6,8 @@
 import random
 import re
 import socket
+import subprocess
+import sys
 from urllib.parse import urlparse
 
 
@@ -233,6 +235,103 @@ def read_windows_proxy_registry():
     return {"ProxyEnable": int(enable), "ProxyServer": str(server)}
 
 
+def default_text_runner(command):
+    """真实子进程读取，返回标准输出文本；命令不存在时由调用方捕获 OSError。"""
+    result = subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8",
+    )
+    return result.stdout
+
+
+def _parse_macos_proxy_block(text):
+    """解析单个 networksetup -get*proxy 输出，启用且地址完整时返回 host:port。"""
+    fields = {}
+    for line in text.splitlines():
+        if ":" in line:
+            key, _, value = line.partition(":")
+            fields[key.strip()] = value.strip()
+    if fields.get("Enabled", "").lower() != "yes":
+        return None
+    server = fields.get("Server", "")
+    port = fields.get("Port", "")
+    if not server or not port or not port.isdigit():
+        return None
+    return f"{server}:{port}"
+
+
+def read_macos_proxy(runner=None):
+    """用 networksetup 读 macOS 系统代理，任一服务启用即返回其地址。
+
+    networksetup 不存在（非 macOS）返回 None；全部禁用返回开关关闭。
+    """
+    runner = runner or default_text_runner
+    try:
+        listing = runner(["networksetup", "-listallnetworkservices"])
+    except OSError:
+        return None
+    services = [
+        line.strip()
+        for line in listing.splitlines()[1:]
+        if line.strip() and not line.lstrip().startswith("*")
+    ]
+    getters = ("-getwebproxy", "-getsecurewebproxy", "-getsocksfirewallproxy")
+    for service in services:
+        for getter in getters:
+            try:
+                block = runner(["networksetup", getter, service])
+            except OSError:
+                return None
+            proxy = _parse_macos_proxy_block(block)
+            if proxy:
+                return {"ProxyEnable": 1, "ProxyServer": proxy}
+    return {"ProxyEnable": 0, "ProxyServer": ""}
+
+
+def _gsettings_value(text):
+    """gsettings 字符串值带单引号，端口是整数；统一去掉首尾单引号和空白。"""
+    return text.strip().strip("'").strip()
+
+
+def read_linux_proxy(runner=None):
+    """第一版只支持 GNOME：mode 为 manual 才读 http/https/socks 地址。
+
+    无 gsettings（纯服务器或无桌面）、mode 非 manual、地址缺失都返回 None。
+    """
+    runner = runner or default_text_runner
+    base = ["gsettings", "get", "org.gnome.system.proxy"]
+    try:
+        mode = _gsettings_value(runner([*base, "mode"]))
+    except OSError:
+        return None
+    if mode != "manual":
+        return None
+    for scheme in ("http", "https", "socks"):
+        try:
+            host = _gsettings_value(runner([*base, scheme, "host"]))
+            port_text = _gsettings_value(runner([*base, scheme, "port"]))
+        except OSError:
+            return None
+        if host and port_text.isdigit():
+            return {"ProxyEnable": 1, "ProxyServer": f"{host}:{port_text}"}
+    return None
+
+
+def read_system_proxy_raw(platform_name=None, runner=None, registry_reader=None):
+    """按平台选读取器，统一返回 ProxyEnable/ProxyServer 字典；不支持的平台返回 None。"""
+    platform_name = sys.platform if platform_name is None else platform_name
+    if platform_name == "win32":
+        reader = registry_reader or read_windows_proxy_registry
+        try:
+            return reader()
+        except RegistryUnavailable:
+            return None
+    if platform_name == "darwin":
+        return read_macos_proxy(runner=runner)
+    if platform_name == "linux":
+        return read_linux_proxy(runner=runner)
+    return None
+
+
 def parse_proxy_server(raw):
     """从系统代理地址里取第一个 host 和端口。
 
@@ -253,17 +352,25 @@ def parse_proxy_server(raw):
     return host, port
 
 
-def detect_system_proxy(registry_reader=None, port_probe=None):
+def detect_system_proxy(
+    registry_reader=None, port_probe=None, platform_name=None, runner=None,
+):
     """通用系统代理检测，不绑定任何代理软件品牌。
 
-    开关关闭、非 Windows、地址损坏都返回 None。
+    三平台统一走 read_system_proxy_raw，开关关闭、不支持的平台、地址损坏都返回 None。
     开关打开但端口无服务，判定为残留；端口有服务则是节点或规则问题。
     """
-    registry_reader = registry_reader or read_windows_proxy_registry
     port_probe = port_probe or (lambda port: default_socket_probe("127.0.0.1", port, timeout=1))
+    platform_name = sys.platform if platform_name is None else platform_name
     try:
-        values = registry_reader()
+        values = read_system_proxy_raw(
+            platform_name=platform_name,
+            runner=runner,
+            registry_reader=registry_reader,
+        )
     except RegistryUnavailable:
+        return None
+    if values is None:
         return None
     if not values.get("ProxyEnable"):
         return None

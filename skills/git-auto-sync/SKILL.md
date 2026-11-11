@@ -9,7 +9,7 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
 
 ## 前置条件
 
-当前仅在 Windows 上完整支持。核心提交与推送逻辑是跨平台的，但系统代理残留检测依赖 Windows 注册表，macOS/Linux 上这项能力自动跳过；认证失败时执行器会按平台给终端指引，Windows 给 PowerShell 步骤，其他系统给通用终端步骤。
+核心提交与推送逻辑跨平台，Windows、macOS、Linux 均支持，系统代理残留检测也已覆盖三个平台：Windows 读注册表，macOS 用 `networksetup`，Linux 第一版只支持 GNOME 的 `gsettings`，KDE 和无桌面环境会跳过这项检测。认证失败时执行器按平台给终端指引，Windows 给 PowerShell 步骤，macOS/Linux 给通用终端步骤。
 
 本机必须已安装 Git 且 `git --version` 能正常输出，并装有 Python 3。执行器在任何 Git 操作前先做依赖检查，找不到可用的 git 时直接返回 `missing_dependency`（退出码 8），不产生提交。
 
