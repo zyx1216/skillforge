@@ -9,6 +9,7 @@ import sys
 from pathlib import Path, PurePath
 
 import network_adapter
+import git_platform
 
 
 SENSITIVE_NAMES = {
@@ -31,14 +32,21 @@ AUTH_ERROR = re.compile(
 )
 REPO_MISSING = re.compile(r"repository .*not found|remote error: repository not found", re.IGNORECASE)
 PROXY_ERROR = re.compile(r"proxy|Failed to connect", re.IGNORECASE)
-SETUP_GUIDANCE = (
-    "GitHub 凭据未配置、已失效或当前账号无权访问远程。请打开 Windows PowerShell"
-    "（Win+R 输入 powershell），不要在 Codex 对话框发送命令，也无需进入项目目录。"
-    "先执行 gh auth login，按提示选择 GitHub.com、HTTPS 和浏览器登录；"
-    "成功后回到同一个 PowerShell 窗口执行 gh auth setup-git，再用 gh auth status 检查；"
-    "使用 SSH 时改为配置本机 SSH 密钥并用 ssh -T git@github.com 验证。"
-    "不要把密码或 Token 发给 Codex。配置后重新运行本任务。"
-)
+SETUP_GUIDANCE = git_platform.auth_guidance()
+
+
+def dependency_check(env=None):
+    """测试通过 GIT_SYNC_TEST_GIT_AVAILABLE 注入，避免依赖运行机器状态。"""
+    env = env if env is not None else os.environ
+    test_value = env.get("GIT_SYNC_TEST_GIT_AVAILABLE")
+    if test_value is not None:
+        if test_value == "1":
+            return None
+        return {
+            "status": "missing_dependency",
+            "error": "未在 PATH 中找到可用的 git，请先安装 Git 并确认 git --version 能正常输出",
+        }
+    return git_platform.check_dependencies()
 
 DEFAULT_TIMEOUT = 30
 DEFAULT_PROXY_PORTS = (7890, 7897, 10808, 10809, 20890, 20891, 8080, 1080)
@@ -82,6 +90,7 @@ def run_git(args, check=True):
 
 
 NETWORK_EXIT_CODE = 7
+DEPENDENCY_EXIT_CODE = 8
 
 
 def evaluate_network():
@@ -261,6 +270,9 @@ def main():
     sensitive = [path for path in args.paths if is_sensitive(path)]
     if sensitive:
         return report("blocked_sensitive_path", 3, paths=sensitive)
+    missing = dependency_check()
+    if missing is not None:
+        return report(missing["status"], DEPENDENCY_EXIT_CODE, error=missing["error"])
     try:
         run_git(["rev-parse", "--show-toplevel"])
         preexisting_staged = run_git(["diff", "--cached", "--name-only"], check=False)

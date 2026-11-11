@@ -9,6 +9,10 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
 
 ## 前置条件
 
+当前仅在 Windows 上完整支持。核心提交与推送逻辑是跨平台的，但系统代理残留检测依赖 Windows 注册表，macOS/Linux 上这项能力自动跳过；认证失败时执行器会按平台给终端指引，Windows 给 PowerShell 步骤，其他系统给通用终端步骤。
+
+本机必须已安装 Git 且 `git --version` 能正常输出，并装有 Python 3。执行器在任何 Git 操作前先做依赖检查，找不到可用的 git 时直接返回 `missing_dependency`（退出码 8），不产生提交。
+
 本机必须已有 GitHub 推送凭据，skill 只复用本机凭据，不得索要密码或 Token。需要提醒用户配置凭据，或排查认证、代理失败时，先读 [references/setup.md](references/setup.md)，按里面的 PowerShell 步骤回复，不要自创配置流程。
 
 首次上传且还没有远程仓库时，必须分别向用户确认 **GitHub 仓库名**和**可见性（公开/私有）**，两项都明确后才能创建。推荐英文小写短横线命名，并优先建议私有；不得默认公开，不得仅根据本地目录名擅自决定。已有远程时不得擅自改名或改变可见性。
@@ -43,6 +47,7 @@ description: 在 Codex 完成项目修改并验证后，根据实际改动生成
    - `preexisting_staged_changes` / `preexisting_dirty_paths`：用户已有改动需要人工拆分，不要绕过检查。
    - `git_error`：报告失败命令的错误摘要，不声称已经同步。
    - `invalid_arguments`：补齐提交说明和仓库内相对路径后重试。
+   - `missing_dependency`：PATH 中找不到可用的 git，提示用户先安装 Git 并用 `git --version` 确认；此状态在任何 Git 操作前返回，不产生提交。
 
 ## 安全边界
 

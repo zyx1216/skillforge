@@ -121,6 +121,56 @@ class SyncTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["status"], "invalid_arguments")
 
+    def test_auth_guidance_branches_by_platform(self):
+        import git_platform
+        self.assertIn("PowerShell", git_platform.auth_guidance("win32"))
+        self.assertNotIn("PowerShell", git_platform.auth_guidance("darwin"))
+        self.assertIn("gh auth login", git_platform.auth_guidance("linux"))
+
+    def test_missing_git_is_reported_before_any_commit(self):
+        before = git(self.repo, "rev-parse", "HEAD")
+        (self.repo / "README.md").write_text("缺少 git\n", encoding="utf-8")
+        env = os.environ.copy()
+        env["LC_ALL"] = "C.UTF-8"
+        env["PYTHONUTF8"] = "1"
+        env["GIT_SYNC_TEST_GIT_AVAILABLE"] = "0"
+        result = subprocess.run(
+            [
+                sys.executable, str(SCRIPT),
+                "--message", "docs: 不应提交", "--", "README.md",
+            ],
+            cwd=self.repo, text=True, encoding="utf-8",
+            capture_output=True, env=env,
+        )
+        self.assertEqual(result.returncode, 8, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "missing_dependency")
+        self.assertIn("git", report["error"])
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), before)
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=self.repo,
+            text=True, encoding="utf-8", capture_output=True, check=True,
+        ).stdout
+        self.assertEqual(status, " M README.md\n")
+
+    def test_available_git_passes_dependency_gate(self):
+        (self.repo / "README.md").write_text("git 可用\n", encoding="utf-8")
+        env = os.environ.copy()
+        env["LC_ALL"] = "C.UTF-8"
+        env["PYTHONUTF8"] = "1"
+        env["GIT_SYNC_TEST_DIRECT"] = "success"
+        env["GIT_SYNC_TEST_GIT_AVAILABLE"] = "1"
+        result = subprocess.run(
+            [
+                sys.executable, str(SCRIPT),
+                "--message", "docs: 依赖闸门放行", "--allow-dirty", "--", "README.md",
+            ],
+            cwd=self.repo, text=True, encoding="utf-8",
+            capture_output=True, env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "pushed")
+
     def test_preexisting_staged_changes_are_not_included(self):
         (self.repo / "user.txt").write_text("用户已暂存\n", encoding="utf-8")
         git(self.repo, "add", "user.txt")

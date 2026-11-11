@@ -2,29 +2,45 @@
 
 这份文档只在配置 GitHub 凭据、排查推送失败时阅读。日常使用看 SKILL.md 即可。
 
+## 先确认前置依赖
+
+执行器依赖本机的 Git 和 Python 3，先在终端确认两者都在 PATH 中：
+
+```powershell
+git --version
+python --version
+```
+
+`git --version` 提示找不到命令时，先安装 Git for Windows（macOS 装 Xcode Command Line Tools 或 Git，Linux 用发行版包管理器），重新打开终端再确认。执行器启动时会先做这层检查，找不到可用的 git 直接返回 `missing_dependency`（退出码 8），不会进入任何提交流程。
+
 ## 前置配置 GitHub 凭据
 
 不需要把 GitHub 密码或 Token 提供给 Codex，skill 只复用本机已有凭据。
 
 ### HTTPS（推荐）
 
-以下命令都在 Windows PowerShell 中执行，不是在 Codex 对话框里发送。按 Win + R，输入 powershell 并回车即可打开。命令和当前目录无关，不需要先 cd 到项目。
+以下命令在系统终端中执行，不是在 Codex 对话框里发送，也不需要先 cd 到项目。
 
-1. 在 PowerShell 运行 `gh --version`。如果提示找不到 gh，先安装 GitHub CLI，再重新打开 PowerShell。
-2. 在同一个 PowerShell 窗口运行 `gh auth login`。
+- Windows：按 Win + R，输入 powershell 并回车打开 Windows PowerShell。
+- macOS：打开“终端”应用。
+- Linux：打开你的终端模拟器。
+
+先确认已安装 GitHub CLI（`gh --version` 有输出），没有则先安装再重新打开终端。然后：
+
+1. 在终端运行 `gh auth login`。
 3. 按窗口中的问题依次选择 GitHub.com、HTTPS、浏览器登录。窗口显示一次性验证码后，复制验证码，在自动打开的 GitHub 网页中登录并授权。
-4. 回到 PowerShell，登录成功后运行 `gh auth setup-git`。这条命令让本机 Git 在推送时复用刚才的 GitHub 登录凭据。
+4. 回到终端，登录成功后运行 `gh auth setup-git`。这条命令让本机 Git 在推送时复用刚才的 GitHub 登录凭据。
 5. 最后运行 `gh auth status`，看到已登录账号即完成。以后 Codex 执行 git push 时会使用这套凭据。
 
 ### SSH
 
-SSH 命令同样在 Windows PowerShell 中执行。
+SSH 命令同样在系统终端中执行，Windows 用户用 PowerShell，macOS/Linux 用各自的终端。
 
 1. 在本机生成或复用 SSH 密钥，并把公钥添加到 GitHub 账号的 Settings → SSH and GPG keys。
 2. 确认仓库远程使用 SSH 地址，例如 `git@github.com:用户名/仓库.git`。
 3. 运行 `ssh -T git@github.com` 验证连接。
 
-未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。Codex 会明确提醒你在 Windows PowerShell 中完成上述步骤。
+未配置、凭据失效或账号无权限时，执行器会在提交前返回 `authentication_required` 和配置提醒，不会要求你发送密码或 Token。Windows 用户收到的指引是 PowerShell 步骤，macOS/Linux 用户收到的是通用终端步骤。注意系统代理残留检测目前只有 Windows 实现，其他系统需要你自己手动检查代理设置。
 
 ## 为什么浏览器能打开 GitHub，git 却报无法接入
 
@@ -141,6 +157,7 @@ git -c http.proxy=socks5h://127.0.0.1:7894 -c https.proxy=socks5h://127.0.0.1:78
 | 状态 | 含义 |
 | --- | --- |
 | `pushed` | 本地提交和 upstream 推送都成功 |
+| `missing_dependency` | PATH 中找不到可用的 git，依赖检查未通过（退出码 8），不产生提交 |
 | `no_changes` | 没有需要提交的改动 |
 | `missing_upstream` | 本地提交已保留，但当前分支没有 upstream，无法自动推送 |
 | `authentication_required` | 提交前预检发现未登录、凭据失效或账号无权限 |
@@ -158,6 +175,7 @@ git -c http.proxy=socks5h://127.0.0.1:7894 -c https.proxy=socks5h://127.0.0.1:78
 
 ## 限制
 
+- 当前仅在 Windows 上完整支持。提交、推送、凭据和代理状态机本身跨平台，但系统代理残留检测依赖 Windows 注册表，macOS/Linux 上会自动跳过这一项，认证指引也改为通用终端版本。
 - 敏感文件名检查加新增行内容扫描都不是完整密钥审计，识别不了编码、拆分或拼接的密钥，公开前仍要人工过一遍 diff。
 - 保护分支或需要 PR 审查的仓库不应直接自动推送。
 - 网络、认证和远程分叉需要用户处理，执行器不会强推。
