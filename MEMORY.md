@@ -31,6 +31,7 @@
 - 2026-11-11：第七轮把系统代理检测从 Windows-only 扩展到三平台，测试从 138 个增至 152 个。新增统一入口 `read_system_proxy_raw` 按 `sys.platform` 分发：win32 走原注册表读取，darwin 用 `networksetup`（先 listallnetworkservices 再逐服务读 getwebproxy/getsecurewebproxy/getsocksfirewallproxy），linux 第一版只支持 GNOME 的 `gsettings manual` 模式。
 - 2026-11-11：三个平台读取器统一返回 `{"ProxyEnable", "ProxyServer"}`，之后完全复用既有 `parse_proxy_server`、端口探测和 residual 判定。`detect_system_proxy` 只换默认读取器，`SystemProxyStatus` 结构、network_adapter 无参调用和状态机全部不动，对上层透明。
 - 2026-11-11：跨平台测试全部靠 runner 注入假输出，Windows 开发机也能测 macOS/Linux。`networksetup`/`gsettings` 不存在时读取器返回 None 而不是抛错；Linux 的 KDE、无桌面、mode 非 manual 一律保守返回空。写这类测试的关键是假 runner 的命令元组要和生产参数数组逐元素对齐，gsettings 的 schema、scheme、key 是三个独立参数，不能拼成一个字符串。
+- 2026-11-11：终评 99 分通过，代码层四个评审问题全闭环，唯一剩余是问题 4 真实 E2E（验证缺口，不是缺陷）。在 `docs/e2e-手动清单.md` 新增场景 8 并写明两步走：第一步在当前机器真机走通“三败提问到命令行参数回答”，其中 `--proxy` 路径用已知可用本地代理可确定性走到 `pushed`；第二步等建测试仓库再补私有仓库、无权限、保护分支、远程分叉。真机 E2E 必须用专用测试仓库，不在生产仓库强行制造失败，也不把 `GIT_SYNC_TEST_*` 注入变量写进用户文档。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
