@@ -25,6 +25,9 @@
 - 2026-11-11：启动闸门前置。`sync.main()` 在任何 git 操作前先跑 `dependency_check()`，PATH 无可用 git 直接返回 `missing_dependency`（新退出码 8），不产生提交。子进程测试靠 `GIT_SYNC_TEST_GIT_AVAILABLE` 注入，线上不设此变量才真实执行 `git --version`。
 - 2026-11-11：SOCKS5 从“只看端口”升级为真实无认证握手。`network.socks5_tunnel` 先发方法协商（`05 01 00`，期望回 `05 00`），再发域名方式 CONNECT，回复码 `00` 才算节点可用；按协议分发的 `proxy_tunnel` 统一 HTTP CONNECT 和 SOCKS5 两条路径，`connection.proxy_usable` 对两类代理一视同仁，握手失败回 `need_choice` 并带 `proxy_node_failed`。
 - 2026-11-11：跨平台兼容。`socket.recv_exactly` 是 Python 3.13 才有，改用内部 `_recv_exactly` 循环读定长字节，兼容更老的 Python 3。
+- 2026-11-11：第六轮把“三败问答”从环境变量升级为命令行参数，测试从 127 个增至 138 个。新增 `--retry-direct`、`--proxy <url>`、`--remember-proxy` 三个 argparse 参数，经 `build_network_env` 合并进环境后再喂给状态机，`ConnectionPolicy` 和 `plan_connection` 一行不改，只换“输入从哪来”。
+- 2026-11-11：参数优先级固定为命令行参数高于旧环境变量高于默认。旧的三个用户态变量（`GIT_SYNC_RETRY_DIRECT`、`GIT_SYNC_PROXY`、`GIT_SYNC_REMEMBER_PROXY`）保留读取做兼容，文档主推参数，老调用不会失效。带 `GIT_SYNC_TEST_` 前缀的仍是纯测试注入，不进文档。
+- 2026-11-11：参数组合在任何 git 操作前校验。`--remember-proxy` 必须配 `--proxy`，`--retry-direct` 与 `--proxy` 互斥，违规直接返回 `invalid_arguments`（退出码 2），不产生提交。代理两道校验（端口存活加协议隧道）、`remote_risk`、带代理仍先首轮直连等安全语义全部沿用。
 
 ## 设计取舍
 - 自动同步以“用户明确启用 + 当前分支 upstream”为边界；无远程时保留本地提交。
