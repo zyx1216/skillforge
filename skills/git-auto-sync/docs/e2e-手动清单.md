@@ -2,6 +2,13 @@
 
 自动化测试只在本地临时 Git 仓库和 HTTP 假服务器上运行，不访问真实 GitHub。下面的场景需要人工按需执行，每次发布大版本前至少跑一遍场景 1 和场景 4。
 
+## 终评剩余项的两步走（2026-11）
+
+代码层面的评审问题已全部闭环，唯一剩的是真实环境 E2E，性质是验证缺口而不是缺陷。不用一次全做，按下面两步降低门槛：
+
+1. 先跑场景 8，在当前这台机器、当前网络下把“三败提问到命令行参数回答”这条交互链路真机走通，其中 `--proxy` 路径用已知可用的本地代理，可以确定性地走到 `pushed`。
+2. 场景 2、3、5（私有仓库、无权限、保护分支、远程分叉）等方便建测试仓库时再按本清单逐步补，每次跑完把结果回填到文末的真实执行记录。
+
 ## 场景 1：公开仓库正常推送
 
 前置：本机已通过 `gh auth status` 或 SSH 验证，目标仓库存在且当前分支可直接推送。
@@ -60,6 +67,46 @@
 1. 新建名为 `测试 文件.txt` 或 `my file.txt` 的文件并做改动。
 2. 不传 `--allow-dirty` 调用执行器，预期 `preexisting_dirty_paths` 的路径不带引号、不乱码。
 3. 加 `--allow-dirty` 后重跑，预期正常提交并推送。
+
+## 场景 8：三败问答的命令行交互（终评第一步，优先跑）
+
+目标是在真机走通“执行器返回 `network_choice_required` 到用命令行参数回答”的完整链路，验证 `--retry-direct`、`--proxy`、`--remember-proxy` 三个参数在真实网络下可用。建议在一个专门的测试仓库里做，避免污染日常项目；不要在生产仓库反复制造推送失败。
+
+前置：本机凭据可用，有一个能推送的真实远程；记下当前已知可用的本地代理端口（本机实测 SOCKS5 为 `socks5h://127.0.0.1:7894`，以当时实际监听为准）。
+
+### 8.1 触发提问并核对诊断
+
+1. 在测试仓库做一个普通文本小改动。
+2. 在直连 GitHub 不通的时间窗调用执行器（不带任何网络参数）。直连本身是间歇性的，没触发三败就等网络抖动时重试，不要改代码去强行制造失败。
+3. 预期返回退出码 7、状态 `network_choice_required`，且没有产生提交，`git log` 的 HEAD 不变、改动仍在工作区。
+4. 核对 JSON 里的 `diagnostics`：`direct_attempts` 为 3，`direct_ports` 同时给出 443 和 22 状态；若系统代理有残留或节点问题，`reasons` 里应出现对应标记。
+
+### 8.2 用 `--retry-direct` 回答
+
+在原命令上加 `--retry-direct` 重跑：
+
+```powershell
+python "<skill目录>/scripts/sync.py" --retry-direct --message "<中文提交说明>" --allow-dirty -- <路径>
+```
+
+预期两种结果都算符合：直连恢复时返回 `pushed`；这一轮三次仍全败时返回 `direct_unavailable`（退出码 7），且 `direct_attempts` 累计到 6，不会无限重试。
+
+### 8.3 用 `--proxy` 回答（可确定性走通）
+
+在原命令上加 `--proxy`，这条不依赖直连何时恢复，能稳定验证参数链路：
+
+```powershell
+python "<skill目录>/scripts/sync.py" --proxy "socks5h://127.0.0.1:7894" --message "<中文提交说明>" --allow-dirty -- <路径>
+```
+
+预期执行器先做端口存活和 SOCKS5 握手校验，通过后用一次性 `git -c http.proxy=...` 推送，返回 `pushed`；用 `git config --get http.proxy` 复查，确认全局 gitconfig 没被改动。
+
+### 8.4 验证记住代理和参数冲突
+
+1. 再加 `--remember-proxy` 重跑一次，预期 `~/.git-auto-sync/proxy.json` 写入该地址，之后直连三败时能自动兜底。
+2. 单独给 `--remember-proxy`（不带 `--proxy`），预期返回 `invalid_arguments`，不产生提交。
+3. 同时给 `--retry-direct` 和 `--proxy`，预期同样返回 `invalid_arguments`。
+4. 验证完删除 `~/.git-auto-sync/proxy.json`，清除这次测试写入的记忆。
 
 ## 结果记录
 
