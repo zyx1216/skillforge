@@ -199,6 +199,47 @@ class StateMachineTests(unittest.TestCase):
         self.assertEqual(decision.proxy_url, "socks5h://127.0.0.1:7894")
         self.assertFalse(decision.should_save)
 
+    def test_explicit_proxy_skips_direct_round_even_when_direct_succeeds(self):
+        direct_calls = []
+
+        def direct_probe():
+            direct_calls.append(1)
+            return connection.DirectPorts(True, True)
+
+        policy = connection.ConnectionPolicy(
+            direct_probe=direct_probe,
+            provided_proxy="http://127.0.0.1:7890",
+            proxy_port_probe=lambda url: True,
+            proxy_tunnel_probe=lambda url: True,
+            sleep=lambda _: None,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.USE_PROVIDED_PROXY)
+        self.assertEqual(policy.direct_attempts, 0)
+        self.assertEqual(direct_calls, [])
+
+    def test_explicit_proxy_failure_blocks_even_when_direct_would_work(self):
+        policy = connection.ConnectionPolicy(
+            direct_probe=lambda: connection.DirectPorts(True, True),
+            provided_proxy="http://127.0.0.1:7890",
+            proxy_port_probe=lambda url: True,
+            proxy_tunnel_probe=lambda url: False,
+            sleep=lambda _: None,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.NEED_CHOICE)
+        self.assertIn("proxy_node_failed", decision.reasons)
+        self.assertEqual(policy.direct_attempts, 0)
+
+    def test_saved_proxy_still_requires_direct_failure_first(self):
+        policy = self.make_policy(
+            direct_results=[True],
+            saved_proxy="http://127.0.0.1:7890",
+            proxy_tunnel_probe=lambda url: True,
+        )
+        decision = connection.plan_connection(policy)
+        self.assertEqual(decision.outcome, connection.DIRECT)
+
     def test_remembered_proxy_is_marked_to_save(self):
         policy = self.make_policy(
             direct_results=[False, False, False],

@@ -180,6 +180,17 @@ class DecideNetworkActionTests(unittest.TestCase):
         result = network_adapter.decide_network_action(env)
         self.assertEqual(result["outcome"], "use_saved_proxy")
 
+    def test_explicit_proxy_skips_direct_even_when_direct_injected_failure(self):
+        env = self.base_env(
+            GIT_SYNC_TEST_DIRECT="fail",
+            GIT_SYNC_PROXY="http://127.0.0.1:7890",
+            GIT_SYNC_TEST_PROXY_ALIVE="1",
+            GIT_SYNC_TEST_TUNNEL="1",
+        )
+        result = network_adapter.decide_network_action(env)
+        self.assertEqual(result["outcome"], "use_provided_proxy")
+        self.assertEqual(result["proxy_url"], "http://127.0.0.1:7890")
+
     def test_remote_proxy_is_flagged_in_decision(self):
         env = self.base_env(
             GIT_SYNC_TEST_DIRECT="fail",

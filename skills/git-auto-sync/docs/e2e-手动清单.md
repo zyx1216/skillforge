@@ -93,13 +93,15 @@ python "<skill目录>/scripts/sync.py" --retry-direct --message "<中文提交�
 
 ### 8.3 用 `--proxy` 回答（可确定性走通）
 
-在原命令上加 `--proxy`，这条不依赖直连何时恢复，能稳定验证参数链路：
+在原命令上加 `--proxy`。显式代理会跳过首轮直连，直接做端口存活和协议握手校验，所以不依赖直连何时恢复，能稳定验证参数链路：
 
 ```powershell
 python "<skill目录>/scripts/sync.py" --proxy "socks5h://127.0.0.1:7894" --message "<中文提交说明>" --allow-dirty -- <路径>
 ```
 
-预期执行器先做端口存活和 SOCKS5 握手校验，通过后用一次性 `git -c http.proxy=...` 推送，返回 `pushed`；用 `git config --get http.proxy` 复查，确认全局 gitconfig 没被改动。
+预期执行器不跑直连探测，直接做端口存活和 SOCKS5 握手校验，通过后用一次性 `git -c http.proxy=...` 推送，返回 `pushed`；用 `git config --get http.proxy` 复查，确认全局 gitconfig 没被改动。
+
+2026-11-11 真机记录：首次跑 8.3 时旧实现仍先做直连探测，当时 TCP 443 能握手但 TLS 被重置，执行器误判直连可用、忽略了显式 `--proxy`，git 直连被 RST，返回 `remote_unavailable`。据此把语义改为“显式代理跳过直连”，自动化测试补了直连成功和直连失败两组用例；修复后需在本测试场重跑 8.3 回填结果。
 
 ### 8.4 验证记住代理和参数冲突
 

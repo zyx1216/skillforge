@@ -149,18 +149,6 @@ def build_diagnostics(policy):
 
 
 def plan_connection(policy):
-    if policy.run_direct_round():
-        return ConnectionDecision(DIRECT)
-
-    if policy.retry_direct:
-        if policy.run_direct_round():
-            return ConnectionDecision(DIRECT)
-        return ConnectionDecision(
-            DIRECT_UNAVAILABLE,
-            diagnostics=build_diagnostics(policy),
-            reasons=_direct_failure_reasons(policy, ["second_round_failed"]),
-        )
-
     if policy.provided_proxy:
         usable, reason = policy.proxy_usable(policy.provided_proxy)
         if usable:
@@ -173,7 +161,19 @@ def plan_connection(policy):
         return ConnectionDecision(
             NEED_CHOICE,
             diagnostics=build_diagnostics(policy),
-            reasons=["direct_round_failed", reason],
+            reasons=[reason],
+        )
+
+    if policy.run_direct_round():
+        return ConnectionDecision(DIRECT)
+
+    if policy.retry_direct:
+        if policy.run_direct_round():
+            return ConnectionDecision(DIRECT)
+        return ConnectionDecision(
+            DIRECT_UNAVAILABLE,
+            diagnostics=build_diagnostics(policy),
+            reasons=_direct_failure_reasons(policy, ["second_round_failed"]),
         )
 
     reasons = _direct_failure_reasons(policy, ["direct_round_failed"])

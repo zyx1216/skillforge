@@ -86,7 +86,7 @@ python "<skill目录>/scripts/sync.py" --proxy "http://127.0.0.1:20891" --rememb
 
 - `--retry-direct` 和 `--proxy` 互斥，继续直连和提供代理只能二选一，同时给会返回 `invalid_arguments`。
 - `--remember-proxy` 必须配合 `--proxy`，单独给会返回 `invalid_arguments`。
-- 带 `--proxy` 重跑时仍先做首轮直连，直连恢复就优先直连，直连失败才用代理。
+- 显式给了 `--proxy` 就不再做首轮直连，直接校验这个代理（端口存活加协议握手）并使用它。这样可以避开“TCP 能连上但 TLS 被重置”导致的直连误判；自动兜底用的已记住代理不同，仍然是先直连、三败后才启用。
 
 ### 兼容：旧的环境变量写法
 
