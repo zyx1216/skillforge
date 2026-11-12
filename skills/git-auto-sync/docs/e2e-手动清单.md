@@ -105,6 +105,8 @@ python "<skill目录>/scripts/sync.py" --proxy "socks5h://127.0.0.1:7894" --mess
 
 2026-11-12 真机记录：上一处修复后重跑，`direct_attempts=0` 证明显式代理已跳过直连，但又暴露出第二个被 mock 掩盖的 bug。`connection.proxy_alive` 原本把完整代理 URL 降级成无 scheme 的 `host:port` 字符串再传给端口探针，而真实探针用 `urlparse` 解析它，无 scheme 时 `hostname/port` 都是 `None`，导致真实环境端口探测恒为失败、返回 `network_choice_required` 且 `reasons` 带 `saved_proxy_unreachable`（此时代理端口和 SOCKS5 握手实测都正常）。单测因为把探针 mock 成固定值从未触发解析。修复为把完整代理 URL 直接传给探针，并新增一个用本地真实 TCP 端口、不 mock 探针的集成测试锁定。
 
+2026-11-12 重跑结果（通过）：在私有测试仓库 `skill-testing-lab` 用执行器带 `--proxy socks5h://127.0.0.1:7894` 跑通，返回 `pushed`，新提交 `c653f9f` 只含目标文件，提交说明由执行器写入，本地 `HEAD` 与 `origin/main` 一致、upstream 为 `origin/main`，工作区干净，全局 `http.proxy` 仍为空，确认一次性 `-c` 注入没有改全局配置。至此“显式代理参数回答 → 执行器校验 → 提交 → 推送”这条命令行交互链路真机闭环，8.3 标记通过。
+
 ### 8.4 验证记住代理和参数冲突
 
 1. 再加 `--remember-proxy` 重跑一次，预期 `~/.git-auto-sync/proxy.json` 写入该地址，之后直连三败时能自动兜底。
