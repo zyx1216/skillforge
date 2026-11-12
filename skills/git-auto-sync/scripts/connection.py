@@ -91,7 +91,7 @@ class ConnectionPolicy:
             return False
         if not host or not port:
             return False
-        return bool(self.proxy_port_probe(f"{host}:{port}"))
+        return bool(self.proxy_port_probe(proxy_url))
 
     def proxy_usable(self, proxy_url):
         """端口存活后再验证代理是否真能建到 GitHub 的隧道。

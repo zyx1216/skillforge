@@ -103,6 +103,8 @@ python "<skill目录>/scripts/sync.py" --proxy "socks5h://127.0.0.1:7894" --mess
 
 2026-11-11 真机记录：首次跑 8.3 时旧实现仍先做直连探测，当时 TCP 443 能握手但 TLS 被重置，执行器误判直连可用、忽略了显式 `--proxy`，git 直连被 RST，返回 `remote_unavailable`。据此把语义改为“显式代理跳过直连”，自动化测试补了直连成功和直连失败两组用例；修复后需在本测试场重跑 8.3 回填结果。
 
+2026-11-12 真机记录：上一处修复后重跑，`direct_attempts=0` 证明显式代理已跳过直连，但又暴露出第二个被 mock 掩盖的 bug。`connection.proxy_alive` 原本把完整代理 URL 降级成无 scheme 的 `host:port` 字符串再传给端口探针，而真实探针用 `urlparse` 解析它，无 scheme 时 `hostname/port` 都是 `None`，导致真实环境端口探测恒为失败、返回 `network_choice_required` 且 `reasons` 带 `saved_proxy_unreachable`（此时代理端口和 SOCKS5 握手实测都正常）。单测因为把探针 mock 成固定值从未触发解析。修复为把完整代理 URL 直接传给探针，并新增一个用本地真实 TCP 端口、不 mock 探针的集成测试锁定。
+
 ### 8.4 验证记住代理和参数冲突
 
 1. 再加 `--remember-proxy` 重跑一次，预期 `~/.git-auto-sync/proxy.json` 写入该地址，之后直连三败时能自动兜底。

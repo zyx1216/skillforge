@@ -1,5 +1,7 @@
 import unittest
 import tempfile
+import http.server
+import threading
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -190,6 +192,26 @@ class DecideNetworkActionTests(unittest.TestCase):
         result = network_adapter.decide_network_action(env)
         self.assertEqual(result["outcome"], "use_provided_proxy")
         self.assertEqual(result["proxy_url"], "http://127.0.0.1:7890")
+
+    def test_real_port_probe_accepts_full_proxy_url_without_mock(self):
+        server = http.server.HTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler
+        )
+        port = server.server_port
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            env = self.base_env(
+                GIT_SYNC_TEST_DIRECT="fail",
+                GIT_SYNC_PROXY=f"http://127.0.0.1:{port}",
+                GIT_SYNC_TEST_TUNNEL="1",
+            )
+            result = network_adapter.decide_network_action(env)
+        finally:
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertEqual(result["outcome"], "use_provided_proxy")
+        self.assertEqual(result["proxy_url"], f"http://127.0.0.1:{port}")
 
     def test_remote_proxy_is_flagged_in_decision(self):
         env = self.base_env(
