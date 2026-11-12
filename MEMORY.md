@@ -33,6 +33,8 @@
 - 2026-11-11：跨平台测试全部靠 runner 注入假输出，Windows 开发机也能测 macOS/Linux。`networksetup`/`gsettings` 不存在时读取器返回 None 而不是抛错；Linux 的 KDE、无桌面、mode 非 manual 一律保守返回空。写这类测试的关键是假 runner 的命令元组要和生产参数数组逐元素对齐，gsettings 的 schema、scheme、key 是三个独立参数，不能拼成一个字符串。
 - 2026-11-11：第八轮，真机 E2E 在 Project_10 测试场抓到 mock 测不出的缺陷。旧状态机首轮直连只做 TCP 三次握手（`default_socket_probe` 用 `connect_ex`），国内网络 TCP 443 能连上但 TLS 带 SNI 握手被 GFW 重置，于是误判“直连可用”，`plan_connection` 在直连成功分支直接返回 DIRECT，完全忽略用户显式给的 `--proxy`，git 真去直连被 RST，报 `remote_unavailable: Recv failure Connection was reset`。
 - 2026-11-11：修复采用方案 A（显式意图优先）。`plan_connection` 开头先判断 `provided_proxy`，存在就跳过整个直连轮次、直接做端口存活加协议握手两道校验，失败回 `need_choice` 且 `direct_attempts=0`；saved proxy 属于自动兜底，语义不变，仍要先直连、三败后才启用。测试从 152 个增至 156 个，新增“直连成功但有显式代理仍走代理”“显式代理失效即使直连可用也拦截”“saved proxy 仍需直连先失败”三个锁定用例。教训：连通性探针的判断口径必须贴近被代理命令的真实行为，TCP 可达不等于 HTTPS 可用。
+- 2026-11-12：真机 E2E 又抓到第二个被 mock 掩盖的集成 bug，测试增至 157 个。`ConnectionPolicy.proxy_alive` 原本把完整代理 URL 用 f-string 降级成无 scheme 的 `host:port` 再传给 `proxy_port_probe`，而 `network_adapter` 的真实探针用 `urlparse` 解析这个字符串；`urlparse("127.0.0.1:7894")` 因没有 scheme，`hostname/port` 都是 None，真实环境端口探测恒返回 False，状态机报 `saved_proxy_unreachable`，但代理端口和 SOCKS5 握手实测都正常。所有单测都把探针 mock 成 `lambda url: True/False`，从不解析参数，所以长期没暴露。修复是让探针直接收完整 URL（urlparse 能正常解析），host/port 空值校验仍保留。
+- 2026-11-12：核心教训：凡是“内部函数把数据降级后传给可注入依赖”的地方，必须有一个不 mock 该依赖、用真实本地资源（真实 TCP 端口、临时文件、假本地服务器）的集成测试，否则协议或格式契约一变，mock 测试全绿但真机必挂。这两个真机 bug 都属于同一类：mock 让测试只验证了调用次数和分支，没验证跨模块传参的真实可解析性。
 - 2026-11-11：终评 99 分通过，代码层四个评审问题全闭环，唯一剩余是问题 4 真实 E2E（验证缺口，不是缺陷）。在 `docs/e2e-手动清单.md` 新增场景 8 并写明两步走：第一步在当前机器真机走通“三败提问到命令行参数回答”，其中 `--proxy` 路径用已知可用本地代理可确定性走到 `pushed`；第二步等建测试仓库再补私有仓库、无权限、保护分支、远程分叉。真机 E2E 必须用专用测试仓库，不在生产仓库强行制造失败，也不把 `GIT_SYNC_TEST_*` 注入变量写进用户文档。
 
 ## 设计取舍
