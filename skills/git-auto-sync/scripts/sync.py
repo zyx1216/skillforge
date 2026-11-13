@@ -285,6 +285,15 @@ def build_network_env(args, base_env=None):
     return env
 
 
+def unstage_task_paths(paths):
+    """中止时只把本次 add 的路径移出暂存区。
+
+    进入提交流程前的预暂存检查已确认索引为空，所以这里的 reset 不会碰到
+    用户原有暂存；它只影响索引，工作区文件原样保留。
+    """
+    run_git(["reset", "--", *paths])
+
+
 def main():
     args = parse_args()
     if not args.paths or not args.message.strip():
@@ -345,11 +354,13 @@ def main():
         remote_name, remote_branch, branch, upstream_name, first_push = target
         decision = evaluate_network(env=build_network_env(args))
         if isinstance(decision, int):
+            unstage_task_paths(args.paths)
             return decision
         proxy_url = decision["proxy_url"] if decision else None
         proxy_args = proxy_git_args(proxy_url)
         blocked = preflight_remote(remote_name, remote_branch, proxy_args=proxy_args)
         if blocked is not None:
+            unstage_task_paths(args.paths)
             return blocked
         run_git(["commit", "-m", args.message])
         commit = run_git(["rev-parse", "HEAD"]).stdout.strip()

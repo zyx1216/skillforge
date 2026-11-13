@@ -230,6 +230,10 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(report["status"], "authentication_required")
         self.assertIn("gh auth login", report["setup"])
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), before)
+        self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "")
+        self.assertEqual(
+            (self.repo / "README.md").read_text(encoding="utf-8"), "尚未登录\n"
+        )
 
     def test_proxy_failure_returns_proxy_troubleshooting(self):
         server = http.server.HTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)

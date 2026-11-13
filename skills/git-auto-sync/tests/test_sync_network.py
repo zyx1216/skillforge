@@ -91,6 +91,31 @@ class SyncNetworkTests(unittest.TestCase):
         self.assertEqual(report["status"], "direct_unavailable")
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head_before)
 
+    def test_network_choice_unstages_task_paths_but_keeps_files(self):
+        self.change_readme()
+        result = self.sync(
+            "--message", "docs: 三败回滚暂存", "--", "README.md",
+            extra_env={"GIT_SYNC_TEST_DIRECT": "fail"},
+        )
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(json.loads(result.stdout)["status"], "network_choice_required")
+        self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "")
+        self.assertEqual(
+            (self.repo / "README.md").read_text(encoding="utf-8"),
+            "网络状态机改动\n",
+        )
+
+    def test_direct_unavailable_unstages_task_paths(self):
+        self.change_readme()
+        result = self.sync(
+            "--retry-direct",
+            "--message", "docs: 直连不可用回滚暂存", "--", "README.md",
+            extra_env={"GIT_SYNC_TEST_DIRECT": "fail"},
+        )
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(json.loads(result.stdout)["status"], "direct_unavailable")
+        self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "")
+
     def test_provided_proxy_pushes_without_saving(self):
         self.change_readme()
         result = self.sync(
