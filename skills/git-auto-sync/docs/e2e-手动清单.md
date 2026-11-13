@@ -107,6 +107,16 @@ python "<skill目录>/scripts/sync.py" --proxy "socks5h://127.0.0.1:7894" --mess
 
 2026-11-12 重跑结果（通过）：在私有测试仓库 `skill-testing-lab` 用执行器带 `--proxy socks5h://127.0.0.1:7894` 跑通，返回 `pushed`，新提交 `c653f9f` 只含目标文件，提交说明由执行器写入，本地 `HEAD` 与 `origin/main` 一致、upstream 为 `origin/main`，工作区干净，全局 `http.proxy` 仍为空，确认一次性 `-c` 注入没有改全局配置。至此“显式代理参数回答 → 执行器校验 → 提交 → 推送”这条命令行交互链路真机闭环，8.3 标记通过。
 
+### 8.5 中止即回滚暂存（2026-11-13 真机通过）
+
+验证 `git add` 之后、commit 之前因网络中止时，执行器自动把本次路径移出暂存区但保留工作区文件。用端口无服务的坏代理 `socks5h://127.0.0.1:9` 确定性触发，不依赖直连抖动：
+
+- 返回 `network_choice_required`、退出码 7，`reasons` 带 `saved_proxy_unreachable`，`direct_attempts=0`（显式代理跳过直连）。
+- `git diff --cached --name-only` 为空，暂存已自动回滚；`HEAD` 不变，没有产生提交。
+- 工作区文件仍在，`git status --short` 显示为未跟踪 `??`。
+
+排查备注：PowerShell 里用 `[System.IO.File]::Exists(相对路径)` 判断会返回 False，是因为 .NET 当前目录与 PowerShell 的 `$PWD` 不同步，不代表文件被删；核对文件是否存在应使用 `Test-Path` 或 `git status`。
+
 ### 8.4 验证记住代理和参数冲突
 
 1. 再加 `--remember-proxy` 重跑一次，预期 `~/.git-auto-sync/proxy.json` 写入该地址，之后直连三败时能自动兜底。
